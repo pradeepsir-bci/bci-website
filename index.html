@@ -1109,7 +1109,7 @@ tbody td {
   font-weight: 700;
   margin-bottom: 6px;
 }
-.notice-body { font-size: var(--fs-sm); color: var(--text-muted); line-height: 1.6; }
+.notice-body { font-size: var(--fs-sm); color: var(--text-muted); line-height: 1.6; white-space: pre-line; }
 .notice-footer {
   display: flex;
   align-items: center;
@@ -2487,7 +2487,7 @@ async function loadHomeNotices() {
       container.innerHTML += `
         <div class="notice-item ${n.importance || 'normal'}">
           <div class="notice-title">${n.title}</div>
-          <div class="notice-body">${n.message}</div>
+          <div class="notice-body" style="white-space:pre-line;">${n.message.replace(/\\n/g, "\n")}</div>
           <div class="notice-footer">
             ${importanceLabel}
             <span class="notice-date">📅 ${formatDate(n.createdAt)}</span>
@@ -3012,8 +3012,8 @@ function buildNoticeHTML(n, showFull = false) {
   return `
     <div class="notice-item ${n.importance || 'normal'}" style="margin-bottom:12px;">
       <div class="notice-title">${n.title}</div>
-      <div class="notice-body" style="${!showFull ? 'display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;' : ''}">
-        ${n.message}
+      <div class="notice-body" style="${!showFull ? 'display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;' : 'white-space:pre-line;'}">
+        ${n.message.replace(/\\n/g, '\n')}
       </div>
       <div class="notice-footer">
         ${labels[n.importance || 'normal']}
@@ -4910,7 +4910,7 @@ async function loadAdminNotices() {
               </button>
             </div>
           </div>
-          <div class="notice-body" style="margin-top:8px;">${n.message}</div>
+          <div class="notice-body" style="margin-top:8px;white-space:pre-line;">${n.message.replace(/\\n/g, "\n")}</div>
           <div class="notice-footer" style="margin-top:10px;">
             ${importanceLabel[n.importance || 'normal']}
             <span class="notice-date">📅 ${formatDate(n.createdAt)}</span>
