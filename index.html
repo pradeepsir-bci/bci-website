@@ -3042,6 +3042,11 @@ function buildStudentDashboardHTML() {
 
   const student = AppState.currentUser;
 
+  // Resolve class display name (e.g. "Class 9" not doc ID)
+  const className = getClassName(student.class);
+  // Store on AppState for use in other functions
+  AppState.currentClassName = className;
+
   // Inject dashboard HTML into body
   document.body.insertAdjacentHTML('beforeend', `
 
@@ -3071,7 +3076,7 @@ function buildStudentDashboardHTML() {
       <div class="sidebar-user">
         <div class="sidebar-user-name">👤 ${student.name}</div>
         <div class="sidebar-user-role">
-          🎓 ${student.class} &nbsp;|&nbsp; Roll: ${student.roll || '—'}
+          🎓 ${className} &nbsp;|&nbsp; Roll: ${student.roll || '—'}
         </div>
         <div style="font-size:var(--fs-xs);color:var(--text-dim);margin-top:2px;">📅 ${student.session || '—'}</div>
       </div>
@@ -3143,11 +3148,11 @@ function buildStudentDashboardHTML() {
             Namaste, <span style="color:var(--neon-blue);">${student.name.split(' ')[0]}</span>! 👋
           </h1>
           <p style="color:var(--text-muted); font-size:var(--fs-base);">
-            Your study materials for <strong style="color:var(--text-white);">${student.class}</strong> are ready.
+            Your study materials for <strong style="color:var(--text-white);">${className}</strong> are ready.
             Keep learning, keep growing!
           </p>
           <div style="margin-top:16px;">
-            <span class="badge badge-blue">🎓 ${student.class}</span>
+            <span class="badge badge-blue">🎓 ${className}</span>
             &nbsp;
             <span class="badge ${(student.board||'BSEB')==='CBSE' ? 'badge-green' : 'badge-blue'}">
               ${(student.board||'BSEB')==='CBSE' ? '📗 CBSE' : '📘 BSEB'}
@@ -3211,14 +3216,14 @@ function buildStudentDashboardHTML() {
         <div class="page-header">
           <h1>📚 Study <span>Materials</span></h1>
           <p style="color:var(--text-muted);">
-            ${student.class} — Browse folders and download your study materials
+            ${className} — Browse folders and download your study materials
           </p>
         </div>
 
         <!-- Breadcrumb navigation -->
         <div class="breadcrumb" id="s-breadcrumb">
           <span class="breadcrumb-item active"
-                onclick="navigateToRoot()">🏠 ${student.class}</span>
+                onclick="navigateToRoot()">🏠 ${className}</span>
         </div>
 
         <!-- Folder contents area -->
@@ -3270,12 +3275,13 @@ function buildStudentDashboardHTML() {
             <div class="card-title">📋 My <span>Details</span></div>
             <div style="display:flex; flex-direction:column; gap:16px;">
               ${[
+                { icon:'🪪', label:'Student ID',    val: `<span style="color:var(--neon-blue);font-weight:700;">${student.studentId || student.id}</span>` },
                 { icon:'📅', label:'Session',       val: student.session || '—' },
                 { icon:'📋', label:'Board',         val: student.board || 'BSEB' },
-                { icon:'🎓', label:'Class',         val: student.class },
+                { icon:'🎓', label:'Class',         val: className },
                 { icon:'🔢', label:'Roll Number',   val: student.roll || '—' },
                 { icon:'👤', label:'Full Name',     val: student.name },
-                { icon:'⚧', label:'Gender',        val: student.gender || '—' },
+                { icon:'⚧',  label:'Gender',        val: student.gender || '—' },
                 { icon:'🎂', label:'Date of Birth', val: student.dob || '—' },
                 { icon:'📱', label:'Mobile Number', val: student.mobile },
                 { icon:'📱', label:'Alt. Mobile',   val: student.altMobile || 'Not provided' },
@@ -3366,9 +3372,22 @@ function showStudentPage(pageId) {
 // Called after successful login
 // Builds HTML, shows dashboard, loads all data
 // =============================================================
-function initStudentDashboard() {
+async function initStudentDashboard() {
   // Hide all public pages
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+
+  // Load class name map so getClassName works correctly
+  if (!window._classNameMap) {
+    try {
+      const classSnap = await db.collection('classes').get();
+      window._classNameMap = {};
+      classSnap.forEach(doc => {
+        window._classNameMap[doc.id] = doc.data().name || doc.id;
+      });
+    } catch (e) {
+      window._classNameMap = {};
+    }
+  }
 
   // Build dashboard HTML
   buildStudentDashboardHTML();
@@ -3497,8 +3516,17 @@ function buildNoticeHTML(n, showFull = false) {
     important: '<span class="badge badge-orange">⚠️ Important</span>',
     urgent:    '<span class="badge badge-red">🚨 Urgent</span>'
   };
+
+  // On dashboard (showFull=false) → clickable, navigates to Notices tab
+  // On notices page (showFull=true) → not clickable, shows full text
+  const clickable = !showFull;
+
   return `
-    <div class="notice-item ${n.importance || 'normal'}" style="margin-bottom:12px;">
+    <div class="notice-item ${n.importance || 'normal'}" style="margin-bottom:12px;
+         ${clickable ? 'cursor:pointer; transition:border-color 0.2s, transform 0.15s;' : ''}"
+         ${clickable ? `onclick="showStudentPage('s-page-notices'); loadStudentNotices();"
+                       onmouseenter="this.style.transform='translateY(-2px)'"
+                       onmouseleave="this.style.transform=''"` : ''}>
       <div class="notice-title">${n.title}</div>
       <div class="notice-body" style="${!showFull ? 'display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;' : 'white-space:pre-line;'}">
         ${n.message.replace(/\\n/g, '\n')}
@@ -3506,6 +3534,7 @@ function buildNoticeHTML(n, showFull = false) {
       <div class="notice-footer">
         ${labels[n.importance || 'normal']}
         <span class="notice-date">📅 ${formatDate(n.createdAt)}</span>
+        ${clickable ? '<span style="color:var(--neon-blue);font-size:var(--fs-xs);margin-left:auto;">Read more →</span>' : ''}
       </div>
     </div>`;
 }
@@ -3520,29 +3549,47 @@ async function loadStudentRecentMaterials() {
   if (!container) return;
   const classId = AppState.currentUser.class;
   try {
+    // No orderBy here — avoids needing a composite index
+    // We sort by createdAt in JS after fetching
     const snap = await db.collection('materials')
       .where('classId', '==', classId)
       .where('isLocked', '==', false)
-      .orderBy('createdAt', 'desc')
-      .limit(4)
       .get();
 
     if (snap.empty) {
       container.innerHTML = `
-        <div class="empty-state" style="padding:24px;">
-          <div class="empty-state-icon" style="font-size:36px;">📄</div>
-          <p>No materials added yet. Check back soon!</p>
+        <div style="padding:24px; text-align:center; color:var(--text-muted);">
+          <div style="font-size:36px; margin-bottom:8px;">📂</div>
+          <p style="font-size:var(--fs-base);">No study materials added yet.</p>
+          <p style="font-size:var(--fs-sm); margin-top:4px; color:var(--text-dim);">
+            Check back soon — your teacher will upload materials here.
+          </p>
         </div>`;
       return;
     }
 
+    // Sort by createdAt descending in JS, take latest 4
+    const sorted = snap.docs
+      .map(doc => ({ id: doc.id, ...doc.data() }))
+      .sort((a, b) => {
+        const aTime = a.createdAt?.seconds || 0;
+        const bTime = b.createdAt?.seconds || 0;
+        return bTime - aTime;
+      })
+      .slice(0, 4);
+
     container.innerHTML = `
       <div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:14px;">
-        ${snap.docs.map(doc => buildFileCardHTML(doc.id, doc.data())).join('')}
+        ${sorted.map(m => buildFileCardHTML(m.id, m)).join('')}
       </div>`;
 
   } catch (err) {
-    container.innerHTML = '<p style="color:var(--text-muted);">Could not load materials.</p>';
+    console.error('loadStudentRecentMaterials error:', err);
+    container.innerHTML = `
+      <div style="padding:24px; text-align:center; color:var(--text-muted);">
+        <div style="font-size:32px; margin-bottom:8px;">⚠️</div>
+        <p>Could not load materials. Please check your internet connection.</p>
+      </div>`;
   }
 }
 
@@ -3693,11 +3740,11 @@ function navigateToBreadcrumb(index) {
 function updateStudentBreadcrumb() {
   const bc = document.getElementById('s-breadcrumb');
   if (!bc) return;
-  const student = AppState.currentUser;
+  const className = AppState.currentClassName || getClassName(AppState.currentUser.class);
   let html = `
     <span class="breadcrumb-item ${AppState.breadcrumbs.length === 0 ? 'active' : ''}"
           onclick="navigateToRoot()">
-      🏠 ${student.class}
+      🏠 ${className}
     </span>`;
 
   AppState.breadcrumbs.forEach((crumb, index) => {
