@@ -1033,13 +1033,36 @@ tbody td {
   word-break: break-word;
 }
 .folder-meta { font-size: var(--fs-xs); color: var(--text-dim); }
-.folder-actions {
-  position: absolute;
-  top: 8px; right: 8px;
-  display: none;
-  gap: 4px;
+.folder-menu-btn {
+  opacity: 0;
+  transition: opacity 0.15s;
+  color: var(--text-muted) !important;
+  background: var(--bg-card2) !important;
+  border-radius: 6px !important;
 }
-.folder-item:hover .folder-actions { display: flex; }
+.folder-item:hover .folder-menu-btn { opacity: 1; }
+.folder-dropdown-menu {
+  position: absolute;
+  top: 32px; right: 0;
+  background: var(--bg-card);
+  border: 1px solid var(--border-bright);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  min-width: 140px;
+  z-index: 100;
+  overflow: hidden;
+}
+.fdm-item {
+  padding: 10px 14px;
+  font-size: var(--fs-sm);
+  color: var(--text-white);
+  cursor: pointer;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+.fdm-item:hover { background: var(--bg-card2); }
+.fdm-item.fdm-danger { color: var(--danger); }
+.fdm-item.fdm-danger:hover { background: rgba(255,68,102,0.1); }
 
 /* File list */
 .file-list { display: flex; flex-direction: column; gap: 10px; }
@@ -1482,30 +1505,111 @@ function getFileIcon(type) {
 
 // =============================================================
 // CHECK SESSION on page load
-// If user was logged in before, restore session
+// If user was logged in before and session not expired, restore
+// Students: 3 days | Admin: 1 day
 // =============================================================
+const SESSION_KEY = 'bci_session';
+
+// =============================================================
+// GENERATE STUDENT UNIQUE ID
+// Format: 2627-BSEB-06-001
+// session 2026-27 → 2627 | board → BSEB | class → 06 | roll → 001
+// =============================================================
+function generateStudentId(session, board, className, roll) {
+  // session: "2026-27" → "2627"
+  const yr = session.replace('20','').replace('-','');
+  // board: "BSEB" or "CBSE"
+  const bd = (board || 'BSEB').toUpperCase();
+  // className: MUST be display name like "Class 6" or "Class 10"
+  // Extract only the numeric part e.g. "Class 9" → "9" → "09"
+  // Strip everything except digits, take only first 1-2 digits (the class number)
+  const digits = String(className).replace(/[^0-9]/g, '');
+  // Take first 2 chars max to avoid picking up timestamps from doc IDs
+  const clNum  = digits.substring(0, 2) || '00';
+  const cl     = clNum.padStart(2, '0');
+  // roll: number → "001"
+  const rl = String(parseInt(roll) || 0).padStart(3, '0');
+  return `${yr}-${bd}-${cl}-${rl}`;
+}
+const STUDENT_EXPIRY_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
+const ADMIN_EXPIRY_MS   = 1 * 24 * 60 * 60 * 1000; // 1 day
+
+function saveSession(data) {
+  const payload = { ...data, savedAt: Date.now() };
+  localStorage.setItem(SESSION_KEY, JSON.stringify(payload));
+}
+
+function clearSession() {
+  localStorage.removeItem(SESSION_KEY);
+}
+
+function getValidSession() {
+  try {
+    const raw = localStorage.getItem(SESSION_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    const now = Date.now();
+    const expiry = data.isAdmin ? ADMIN_EXPIRY_MS : STUDENT_EXPIRY_MS;
+    if (now - (data.savedAt || 0) > expiry) {
+      clearSession();
+      return null;
+    }
+    return data;
+  } catch {
+    clearSession();
+    return null;
+  }
+}
+
+function showSessionExpiry() {
+  try {
+    const raw = localStorage.getItem(SESSION_KEY);
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    const expiry = data.isAdmin ? ADMIN_EXPIRY_MS : STUDENT_EXPIRY_MS;
+    const remaining = expiry - (Date.now() - (data.savedAt || 0));
+    if (remaining <= 0) return;
+    const days  = Math.floor(remaining / (1000*60*60*24));
+    const hours = Math.floor((remaining % (1000*60*60*24)) / (1000*60*60));
+    const label = days > 0 ? `Session expires in ${days}d ${hours}h` : `Session expires in ${hours}h`;
+    const elId = data.isAdmin ? 'admin-session-expiry' : 'student-session-expiry';
+    const el = document.getElementById(elId);
+    if (el) el.textContent = '🔒 ' + label;
+  } catch {}
+}
+
 window.addEventListener('load', () => {
-  checkAndAutoUnlock(); // Run once on load
-  const session = sessionStorage.getItem('bci_session');
-  if (session) {
-    try {
-      const data = JSON.parse(session);
-      if (data.isAdmin) {
-        AppState.isAdmin = true;
-        AppState.currentUser = data.user;
-        initAdminDashboard();
-      } else if (data.user) {
-        AppState.currentUser = data.user;
-        initStudentDashboard();
-      } else {
-        showPage('page-home');
-      }
-    } catch {
+  checkAndAutoUnlock();
+  const data = getValidSession();
+  if (data) {
+    if (data.isAdmin) {
+      AppState.isAdmin = true;
+      AppState.currentUser = data.user;
+      initAdminDashboard();
+    } else if (data.user) {
+      AppState.currentUser = data.user;
+      initStudentDashboard();
+    } else {
       showPage('page-home');
     }
   } else {
     showPage('page-home');
   }
+
+  // Periodic session expiry check every 60 seconds
+  // If session expires while user is active, auto-logout and redirect to home
+  setInterval(() => {
+    const session = getValidSession();
+    if (!session && (AppState.currentUser || AppState.isAdmin)) {
+      // Session has expired — clear state and redirect
+      AppState.currentUser = null;
+      AppState.isAdmin = false;
+      showPage('page-home');
+      showToast('⏰ Your session has expired. Please log in again.', 'info');
+    }
+    // Also refresh the expiry countdown label
+    showSessionExpiry();
+  }, 60 * 1000); // every 60 seconds
 });
 
 console.log('✅ PART 1: Config & Styles loaded');
@@ -1898,14 +2002,28 @@ function buildPageHTML() {
           <!-- STUDENT LOGIN FORM -->
           <div id="student-login-form">
             <div class="form-group">
-              <label>Full Name <span class="required">*</span></label>
-              <input class="form-control" id="login-name" type="text"
-                     placeholder="Enter your full name" autocomplete="name">
+              <label>Session <span class="required">*</span></label>
+              <select class="form-control" id="login-session">
+                <option value="">-- Loading... --</option>
+              </select>
             </div>
             <div class="form-group">
-              <label>Mobile Number <span class="required">*</span></label>
-              <input class="form-control" id="login-mobile" type="tel"
-                     placeholder="10-digit mobile number" maxlength="10" autocomplete="tel">
+              <label>Board <span class="required">*</span></label>
+              <select class="form-control" id="login-board" onchange="onLoginBoardChange()">
+                <option value="">-- Select Board --</option>
+                <option value="BSEB">📘 BSEB (Bihar Board)</option>
+                <option value="CBSE">📗 CBSE</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Class <span class="required">*</span></label>
+              <select class="form-control" id="login-class" disabled>
+                <option value="">-- Select Board first --</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Coaching Roll No. <span class="required">*</span></label>
+              <input class="form-control" id="login-roll" type="number" min="1" placeholder="Enter your roll number">
             </div>
             <div class="form-group">
               <label>Password <span class="required">*</span></label>
@@ -2001,84 +2119,133 @@ function buildPageHTML() {
           "></div>
 
           <!-- REGISTRATION FORM -->
-          <!-- Required fields marked with red * -->
-          <!-- Optional fields marked with (optional) -->
-
           <div class="form-row">
             <div class="form-group">
-              <label>Full Name <span class="required">*</span></label>
-              <input class="form-control" id="reg-name" type="text"
-                     placeholder="Apna poora naam likhein" autocomplete="name">
-              <div class="form-error" id="err-name">Name is required</div>
+              <label>Session <span class="required">*</span></label>
+              <select class="form-control" id="reg-session">
+                <option value="">-- Loading... --</option>
+              </select>
+              <div class="form-error" id="err-session">Please select session</div>
             </div>
             <div class="form-group">
-              <label>Mobile Number <span class="required">*</span></label>
-              <input class="form-control" id="reg-mobile" type="tel"
-                     placeholder="10-digit mobile number" maxlength="10" autocomplete="tel">
-              <div class="form-error" id="err-mobile">Valid 10-digit number required</div>
+              <label>Board <span class="required">*</span></label>
+              <select class="form-control" id="reg-board" onchange="onRegBoardChange()">
+                <option value="">-- Select Board --</option>
+                <option value="BSEB">📘 BSEB (Bihar Board)</option>
+                <option value="CBSE">📗 CBSE</option>
+              </select>
+              <div class="form-error" id="err-board">Please select your board</div>
             </div>
           </div>
-
           <div class="form-row">
             <div class="form-group">
               <label>Class <span class="required">*</span></label>
-              <select class="form-control" id="reg-class">
-                <option value="">-- Apni class chunein --</option>
-                <!-- Classes are loaded dynamically from Firebase -->
+              <select class="form-control" id="reg-class" disabled>
+                <option value="">-- Select Board first --</option>
               </select>
               <div class="form-error" id="err-class">Please select your class</div>
             </div>
+            <div class="form-group" style="visibility:hidden;"></div>
+          </div>
+
+          <div class="form-row">
             <div class="form-group">
-              <label>Password <span class="required">*</span></label>
-              <div style="position:relative;">
-                <input class="form-control" id="reg-password" type="password"
-                       placeholder="Create a password" autocomplete="new-password"
-                       style="padding-right:48px;">
-                <button onclick="togglePasswordVisibility('reg-password')" style="
-                  position:absolute; right:12px; top:50%; transform:translateY(-50%);
-                  background:none; border:none; color:var(--text-dim);
-                  cursor:pointer; font-size:16px;
-                ">👁️</button>
-              </div>
-              <div class="form-error" id="err-password">Password must be at least 6 characters</div>
+              <label>Coaching Roll No. <span class="required">*</span></label>
+              <input class="form-control" id="reg-roll" type="number" min="1" placeholder="e.g. 15">
+              <div class="form-error" id="err-roll">Roll number is required</div>
+            </div>
+            <div class="form-group">
+              <label>Full Name <span class="required">*</span></label>
+              <input class="form-control" id="reg-name" type="text" placeholder="Apna poora naam likhein" autocomplete="name">
+              <div class="form-error" id="err-name">Name is required</div>
             </div>
           </div>
 
           <div class="form-row">
             <div class="form-group">
-              <label>Roll Number <span class="optional">(optional)</span></label>
-              <input class="form-control" id="reg-roll" type="text"
-                     placeholder="School roll number">
+              <label>Gender <span class="required">*</span></label>
+              <select class="form-control" id="reg-gender">
+                <option value="">-- Select --</option>
+                <option value="Male">Male</option>
+                <option value="Female">Female</option>
+                <option value="Other">Other</option>
+              </select>
+              <div class="form-error" id="err-gender">Please select gender</div>
             </div>
             <div class="form-group">
-              <label>Email ID <span class="optional">(optional)</span></label>
-              <input class="form-control" id="reg-email" type="email"
-                     placeholder="Email address" autocomplete="email">
+              <label>Date of Birth <span class="required">*</span></label>
+              <input class="form-control" id="reg-dob" type="date">
+              <div class="form-error" id="err-dob">Date of birth is required</div>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label>Mobile Number <span class="required">*</span></label>
+              <input class="form-control" id="reg-mobile" type="tel" placeholder="10-digit number" maxlength="10" autocomplete="tel">
+              <div class="form-error" id="err-mobile">Valid 10-digit number required</div>
+            </div>
+            <div class="form-group">
+              <label>Alt. Mobile <span class="optional">(optional)</span></label>
+              <input class="form-control" id="reg-alt-mobile" type="tel" placeholder="Alternative number" maxlength="10">
             </div>
           </div>
 
           <div class="form-group">
-            <label>Address <span class="optional">(optional)</span></label>
-            <input class="form-control" id="reg-address" type="text"
-                   placeholder="Your home address">
+            <label>Password <span class="required">*</span></label>
+            <div style="position:relative;">
+              <input class="form-control" id="reg-password" type="password" placeholder="Create a password (min 6 chars)" autocomplete="new-password" style="padding-right:48px;">
+              <button onclick="togglePasswordVisibility('reg-password')" style="position:absolute;right:12px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:16px;">👁️</button>
+            </div>
+            <div class="form-error" id="err-password">Password must be at least 6 characters</div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label>Father's Name <span class="required">*</span></label>
+              <input class="form-control" id="reg-father" type="text" placeholder="Father's full name">
+              <div class="form-error" id="err-father">Father's name is required</div>
+            </div>
+            <div class="form-group">
+              <label>Mother's Name <span class="required">*</span></label>
+              <input class="form-control" id="reg-mother" type="text" placeholder="Mother's full name">
+              <div class="form-error" id="err-mother">Mother's name is required</div>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>Address <span class="required">*</span></label>
+            <textarea class="form-control" id="reg-address" rows="2" placeholder="Your home address" style="resize:vertical;"></textarea>
+            <div class="form-error" id="err-address">Address is required</div>
+          </div>
+
+          <!-- Photo upload -->
+          <div class="form-group">
+            <label>Photo <span class="optional">(optional)</span></label>
+            <div style="display:flex; align-items:center; gap:16px;">
+              <div id="photo-preview" style="width:64px;height:64px;border-radius:50%;background:var(--bg-card2);border:2px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:28px;flex-shrink:0;">👤</div>
+              <div>
+                <input type="file" id="reg-photo" accept="image/*" onchange="previewPhoto(this)" style="display:none;">
+                <button type="button" onclick="document.getElementById('reg-photo').click()" class="btn btn-outline btn-sm">📷 Upload Photo</button>
+                <div style="font-size:var(--fs-xs);color:var(--text-dim);margin-top:4px;">JPG/PNG, max 2MB. Default photo used if not uploaded.</div>
+              </div>
+            </div>
           </div>
 
           <!-- Info box -->
           <div class="info-box">
             ℹ️ After registration, your account will be reviewed by the admin.
-            You will be able to login once approved. Contact on
-            <strong>6206437776</strong> if you need help.
+            You will be able to login once approved. Please visit the institute office if you need help.
           </div>
 
-          <button class="btn btn-primary w-full" onclick="handleStudentRegister()"
-                  id="register-btn">
-            Submit Registration →
-          </button>
+          <div style="display:flex; gap:12px; margin-top:8px;">
+            <button class="btn btn-outline w-full" onclick="resetRegForm()" type="button">🔄 Reset</button>
+            <button class="btn btn-primary w-full" type="button" onclick="handleStudentRegister()" id="register-btn">Submit →</button>
+          </div>
 
           <p style="text-align:center; margin-top:16px; font-size:var(--fs-sm); color:var(--text-muted);">
             Already registered?
-            <a href="#" onclick="showPage('page-login'); return false;"
-               style="color:var(--neon-blue);">Login here</a>
+            <a href="#" onclick="showPage('page-login'); return false;" style="color:var(--neon-blue);">Login here</a>
           </p>
 
         </div>
@@ -2154,90 +2321,106 @@ function showLoginError(msg) {
 // Flow: check exists → check password → check status → enter
 // =============================================================
 async function handleStudentLogin() {
-  const name = document.getElementById('login-name').value.trim();
-  const mobile = document.getElementById('login-mobile').value.trim();
+  const session  = document.getElementById('login-session').value.trim();
+  const board    = document.getElementById('login-board').value.trim();
+  const classVal = document.getElementById('login-class').value.trim();
+  const roll     = document.getElementById('login-roll').value.trim();
   const password = document.getElementById('login-password').value.trim();
-  const btn = document.getElementById('login-btn');
+  const btn      = document.getElementById('login-btn');
 
-  // Basic validation
-  if (!name || !mobile || !password) {
-    showLoginError('Please fill in all fields.');
-    return;
-  }
-  if (mobile.length !== 10 || isNaN(mobile)) {
-    showLoginError('Please enter a valid 10-digit mobile number.');
+  if (!session || !board || !classVal || !roll || !password) {
+    showLoginError('Please fill in all fields. / कृपया सभी जानकारी भरें।');
     return;
   }
 
-  // Show loading
   btn.disabled = true;
   btn.textContent = 'Checking...';
   document.getElementById('login-error').style.display = 'none';
 
   try {
-    // Look up student by mobile number (primary key)
-    const doc = await db.collection('students').doc(mobile).get();
+    // Get class display name (e.g. "Class 9") from dropdown selected option
+    const loginClassSelect = document.getElementById('login-class');
+    const loginClassName = loginClassSelect.options[loginClassSelect.selectedIndex]?.text || classVal;
+    const docId = generateStudentId(session, board, loginClassName, roll);
+    const doc = await db.collection('students').doc(docId).get();
 
     if (!doc.exists) {
-      showLoginError('No account found with this mobile number. Please register first.');
+      showLoginPopup('not_found');
       return;
     }
 
     const student = doc.data();
 
-    // Check name matches (case-insensitive)
-    if (student.name.toLowerCase() !== name.toLowerCase()) {
-      showLoginError('Name does not match. Please check and try again.');
-      return;
-    }
-
-    // Check password
     if (student.password !== password) {
-      showLoginError('Incorrect password. Please try again.');
+      showLoginError('Incorrect password. Please try again. / गलत पासवर्ड।');
       return;
     }
 
-    // Check approval status
     if (student.status === 'pending') {
-      showLoginError('⏳ Your registration is pending admin approval. Please wait or contact: 6206437776');
+      showLoginPopup('pending');
       return;
     }
     if (student.status === 'rejected') {
-      showLoginError('❌ Your registration was not approved. Please contact: 6206437776');
+      showLoginPopup('rejected');
       return;
     }
     if (student.status === 'inactive') {
-      showLoginError('⛔ Your account has been deactivated. Please contact: 6206437776');
+      showLoginPopup('inactive');
       return;
     }
 
     // ✅ Login successful
-    AppState.currentUser = { ...student, id: mobile };
+    AppState.currentUser = { ...student, id: docId };
     AppState.isAdmin = false;
 
-    // Save session so page refresh keeps them logged in
-    sessionStorage.setItem('bci_session', JSON.stringify({
-      user: AppState.currentUser,
-      isAdmin: false
-    }));
+    saveSession({ user: AppState.currentUser, isAdmin: false });
 
-    showToast(`Welcome back, ${student.name.split(' ')[0]}! 🎉`, 'success');
+    showToast(`Welcome, ${student.name.split(' ')[0]}! 🎉`, 'success');
+    setTimeout(showSessionExpiry, 500);
 
-    // Clear form
-    document.getElementById('login-name').value = '';
-    document.getElementById('login-mobile').value = '';
+    document.getElementById('login-session').value = '';
+    document.getElementById('login-roll').value = '';
     document.getElementById('login-password').value = '';
 
-    // Go to student dashboard
     initStudentDashboard();
 
   } catch (err) {
-    showLoginError('Connection error. Please check internet and try again.');
+    showLoginError('Connection error. Please check internet. / इंटरनेट जांचें।');
     console.error('Login error:', err);
   } finally {
     btn.disabled = false;
     btn.textContent = 'Login →';
   }
+}
+
+// =============================================================
+// LOGIN POPUP — bilingual status messages
+// =============================================================
+function showLoginPopup(type) {
+  const messages = {
+    pending: {
+      title: '⏳ Approval Pending',
+      en: 'Your registration form has been submitted. Please wait for admin approval.',
+      hi: 'आपका फॉर्म जमा हो गया है। कृपया एडमिन की स्वीकृति का इंतजार करें।'
+    },
+    rejected: {
+      title: '❌ Registration Not Approved / पंजीकरण अस्वीकृत',
+      en: 'Your registration was not approved by the admin.\n\nPlease visit the institute office for more information.',
+      hi: 'आपका पंजीकरण एडमिन द्वारा स्वीकार नहीं किया गया।\n\nअधिक जानकारी के लिए संस्था के कार्यालय में जाएं।'
+    },
+    inactive: {
+      title: '⛔ Account Deactivated / खाता निष्क्रिय',
+      en: 'Your account has been deactivated by the admin.\n\nPlease visit the institute office for more information.',
+      hi: 'आपका खाता एडमिन द्वारा निष्क्रिय कर दिया गया है।\n\nअधिक जानकारी के लिए संस्था के कार्यालय में जाएं।'
+    },
+    not_found: {
+      title: '❓ Not Registered',
+      en: 'No account found with this Session + Class + Roll No. Please register first.',
+      hi: 'इस Session + Class + Roll No. से कोई खाता नहीं मिला। पहले पंजीकरण करें।'
+    }
+  };
+  const m = messages[type];
+  showBilingualPopup(m.title, m.en, m.hi, () => {});
 }
 
 // =============================================================
@@ -2276,12 +2459,10 @@ async function handleAdminLogin() {
       AppState.isAdmin = true;
       AppState.currentUser = { name: 'Administrator', username };
 
-      sessionStorage.setItem('bci_session', JSON.stringify({
-        user: AppState.currentUser,
-        isAdmin: true
-      }));
+      saveSession({ user: AppState.currentUser, isAdmin: true });
 
       showToast('Welcome, Admin! 👑', 'success');
+      setTimeout(showSessionExpiry, 500);
 
       // Clear form
       document.getElementById('admin-username').value = '';
@@ -2307,76 +2488,239 @@ async function handleAdminLogin() {
 // Admin must approve before they can login
 // =============================================================
 async function handleStudentRegister() {
-  const name     = document.getElementById('reg-name').value.trim();
-  const mobile   = document.getElementById('reg-mobile').value.trim();
-  const classVal = document.getElementById('reg-class').value;
-  const password = document.getElementById('reg-password').value.trim();
+  const session  = document.getElementById('reg-session').value.trim();
+  const board    = document.getElementById('reg-board').value.trim();
+  const classVal = document.getElementById('reg-class').value.trim();
   const roll     = document.getElementById('reg-roll').value.trim();
-  const email    = document.getElementById('reg-email').value.trim();
+  const name     = document.getElementById('reg-name').value.trim();
+  const gender   = document.getElementById('reg-gender').value.trim();
+  const dob      = document.getElementById('reg-dob').value.trim();
+  const mobile   = document.getElementById('reg-mobile').value.trim();
+  const altMobile= document.getElementById('reg-alt-mobile').value.trim();
+  const password = document.getElementById('reg-password').value.trim();
+  const father   = document.getElementById('reg-father').value.trim();
+  const mother   = document.getElementById('reg-mother').value.trim();
   const address  = document.getElementById('reg-address').value.trim();
-  const btn      = document.getElementById('register-btn');
 
-  // Hide all errors first
+  // Hide all errors
   document.querySelectorAll('.form-error').forEach(e => e.classList.remove('show'));
-  showRegisterMsg('', '');
 
-  // Validate required fields
+  // Validate all required fields
   let hasError = false;
-  if (!name) { document.getElementById('err-name').classList.add('show'); hasError = true; }
-  if (!mobile || mobile.length !== 10 || isNaN(mobile)) {
-    document.getElementById('err-mobile').classList.add('show'); hasError = true;
-  }
-  if (!classVal) { document.getElementById('err-class').classList.add('show'); hasError = true; }
-  if (!password || password.length < 6) {
-    document.getElementById('err-password').classList.add('show'); hasError = true;
-  }
+  if (!session)  { document.getElementById('err-session').classList.add('show');  hasError = true; }
+  if (!board)    { document.getElementById('err-board').classList.add('show');    hasError = true; }
+  if (!classVal) { document.getElementById('err-class').classList.add('show');   hasError = true; }
+  if (!roll || isNaN(roll) || parseInt(roll) < 1) { document.getElementById('err-roll').classList.add('show'); hasError = true; }
+  if (!name)     { document.getElementById('err-name').classList.add('show');     hasError = true; }
+  if (!gender)   { document.getElementById('err-gender').classList.add('show');   hasError = true; }
+  if (!dob)      { document.getElementById('err-dob').classList.add('show');      hasError = true; }
+  if (!mobile || mobile.length !== 10 || isNaN(mobile)) { document.getElementById('err-mobile').classList.add('show'); hasError = true; }
+  if (!password || password.length < 6) { document.getElementById('err-password').classList.add('show'); hasError = true; }
+  if (!father)   { document.getElementById('err-father').classList.add('show');   hasError = true; }
+  if (!mother)   { document.getElementById('err-mother').classList.add('show');   hasError = true; }
+  if (!address)  { document.getElementById('err-address').classList.add('show');  hasError = true; }
   if (hasError) return;
 
+  // Get class display name — e.g. "Class 9" not the Firestore doc ID
+  const classSelect = document.getElementById('reg-class');
+  const className = classSelect.options[classSelect.selectedIndex]?.text || classVal;
+
+  // Generate new unique ID using className (display name like "Class 9")
+  const docId = generateStudentId(session, board, className, roll);
+
+  // Store data temporarily for use after confirmation
+  window._pendingRegistration = {
+    docId, session, board, classVal, roll, name, gender, dob,
+    mobile, altMobile, password, father, mother, address, className
+  };
+
+  // Build confirmation details grid
+  const details = [
+    { label: 'Unique ID / ID', value: `<strong style="color:var(--neon-blue);">${docId}</strong>` },
+    { label: 'Session / सत्र', value: session },
+    { label: 'Board / बोर्ड', value: board },
+    { label: 'Class / कक्षा', value: className },
+    { label: 'Roll No / रोल नं', value: roll },
+    { label: 'Name / नाम', value: name },
+    { label: 'Gender / लिंग', value: gender },
+    { label: 'DOB / जन्म तिथि', value: dob },
+    { label: 'Mobile / मोबाइल', value: mobile },
+    { label: "Father / पिता", value: father },
+    { label: "Mother / माता", value: mother },
+  ];
+
+  document.getElementById('reg-confirm-details').innerHTML = details.map(d => `
+    <div style="background:var(--bg-card2); border-radius:6px; padding:8px 10px;">
+      <div style="font-size:10px; color:var(--text-dim); text-transform:uppercase;
+                  letter-spacing:0.5px; margin-bottom:2px;">${d.label}</div>
+      <div style="font-size:var(--fs-sm); color:var(--text-white); font-weight:500;">
+        ${d.value}
+      </div>
+    </div>
+  `).join('');
+
+  openModal('modal-reg-confirm');
+}
+
+
+// =============================================================
+// SUBMIT REGISTRATION — called after confirmation popup
+// =============================================================
+async function submitRegistrationConfirmed() {
+  const data = window._pendingRegistration;
+  if (!data) return;
+
+  const btn = document.getElementById('reg-confirm-submit-btn');
   btn.disabled = true;
-  btn.textContent = 'Submitting...';
+  btn.textContent = 'Submitting... / जमा हो रहा है...';
 
   try {
-    // Check if mobile already registered
-    const existing = await db.collection('students').doc(mobile).get();
+    const existing = await db.collection('students').doc(data.docId).get();
+
     if (existing.exists) {
-      showRegisterMsg('This mobile number is already registered. Please login or contact admin.', 'error');
+      closeModal('modal-reg-confirm');
+      showBilingualPopup(
+        '⚠️ Already Registered / पहले से पंजीकृत',
+        `This Roll Number (${data.docId}) is already registered.\n\nPossible reasons:\n1. You may have already submitted this form.\n2. You may have filled incorrect details.\n\nIf you have filled correct details and this registration does not belong to you, please visit the institute office and inform the staff.`,
+        `यह रोल नंबर (${data.docId}) पहले से पंजीकृत है।\n\nसंभावित कारण:\n1. आपने पहले ही यह फॉर्म भर दिया होगा।\n2. आपने गलत जानकारी भरी होगी।\n\nअगर आपने सही जानकारी भरी है और यह पंजीकरण आपका नहीं है, तो कृपया संस्था के कार्यालय में जाकर कर्मचारियों को सूचित करें।`,
+        () => {}
+      );
       return;
     }
 
-    // Save to Firebase
-    // Mobile number is used as document ID (primary key)
-    await db.collection('students').doc(mobile).set({
-      name,
-      mobile,
-      class: classVal,
-      password,          // NOTE: In production use hashed passwords
-      roll:    roll    || '',
-      email:   email   || '',
-      address: address || '',
-      status: 'pending', // Admin must approve
+    // Handle photo
+    let photoData = '';
+    const photoFile = document.getElementById('reg-photo').files[0];
+    if (photoFile) {
+      photoData = await new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = e => resolve(e.target.result);
+        reader.readAsDataURL(photoFile);
+      });
+    }
+
+    // Save to Firestore with new unique ID
+    await db.collection('students').doc(data.docId).set({
+      session: data.session,
+      board: data.board,
+      class: data.classVal,
+      roll: parseInt(data.roll),
+      name: data.name,
+      gender: data.gender,
+      dob: data.dob,
+      mobile: data.mobile,
+      altMobile: data.altMobile || '',
+      password: data.password,
+      father: data.father,
+      mother: data.mother,
+      address: data.address,
+      photo: photoData || '',
+      status: 'pending',
+      studentId: data.docId,
       createdAt: firebase.firestore.FieldValue.serverTimestamp()
     });
 
-    // Show success message
-    showRegisterMsg(
-      '✅ Registration submitted successfully! Admin will review and approve your account. You will be notified. For urgent help, call: 6206437776',
-      'success'
+    closeModal('modal-reg-confirm');
+    window._pendingRegistration = null;
+
+    showBilingualPopup(
+      '🎉 Submitted Successfully! / सफलतापूर्वक जमा!',
+      `Your registration has been submitted successfully!\n\nYour Unique ID: ${data.docId}\n\nPlease note this ID for your records.\nYou will be able to login after admin approval.\nCome back after some time to check your status.`,
+      `आपका पंजीकरण सफलतापूर्वक जमा हो गया!\n\nआपकी यूनीक ID: ${data.docId}\n\nकृपया यह ID अपने पास नोट कर लें।\nएडमिन की स्वीकृति के बाद आप लॉगिन कर सकेंगे।\nकुछ समय बाद अपनी स्थिति जांचने के लिए वापस आएं।`,
+      () => showPage('page-home')
     );
 
-    // Clear form
-    ['reg-name','reg-mobile','reg-class','reg-password','reg-roll','reg-email','reg-address']
-      .forEach(id => {
-        const el = document.getElementById(id);
-        if (el) el.value = '';
-      });
+    resetRegForm();
 
   } catch (err) {
-    showRegisterMsg('Submission failed. Please check internet connection and try again.', 'error');
+    showToast('Submission failed. Please check internet. / इंटरनेट जांचें।', 'error');
     console.error('Register error:', err);
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Submit Registration →';
+    btn.textContent = '✅ Submit / जमा करें';
   }
+}
+
+// =============================================================
+// RESET REGISTRATION FORM
+// =============================================================
+function resetRegForm() {
+  ['reg-session','reg-board','reg-gender','reg-dob'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  // Reset class dropdown to disabled state
+  const regClass = document.getElementById('reg-class');
+  if (regClass) {
+    regClass.innerHTML = '<option value="">-- Select Board first --</option>';
+    regClass.disabled = true;
+  }
+  ['reg-roll','reg-name','reg-mobile','reg-alt-mobile','reg-password',
+   'reg-father','reg-mother','reg-address'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  const photoPreview = document.getElementById('photo-preview');
+  if (photoPreview) photoPreview.innerHTML = '👤';
+  const photoInput = document.getElementById('reg-photo');
+  if (photoInput) photoInput.value = '';
+  document.querySelectorAll('.form-error').forEach(e => e.classList.remove('show'));
+  loadActiveSessionIntoDropdowns();
+}
+
+// =============================================================
+// PHOTO PREVIEW
+// =============================================================
+function previewPhoto(input) {
+  if (input.files && input.files[0]) {
+    const reader = new FileReader();
+    reader.onload = e => {
+      const preview = document.getElementById('photo-preview');
+      preview.innerHTML = `<img src="${e.target.result}" style="width:64px;height:64px;border-radius:50%;object-fit:cover;">`;
+    };
+    reader.readAsDataURL(input.files[0]);
+  }
+}
+
+// =============================================================
+// BILINGUAL POPUP — shows message in English + Hindi
+// =============================================================
+function showBilingualPopup(title, en, hi, onOk) {
+  // Remove existing popup
+  const existing = document.getElementById('bilingual-popup');
+  if (existing) existing.remove();
+
+  const popup = document.createElement('div');
+  popup.id = 'bilingual-popup';
+  popup.style.cssText = `
+    position:fixed; top:0; left:0; width:100%; height:100%;
+    background:rgba(0,0,0,0.7); z-index:9999;
+    display:flex; align-items:center; justify-content:center;
+    padding:24px;
+  `;
+  popup.innerHTML = `
+    <div style="
+      background:var(--bg-card); border:1px solid var(--border-bright);
+      border-radius:var(--radius); max-width:420px; width:100%;
+      padding:32px; text-align:center;
+      box-shadow: 0 0 40px rgba(0,212,255,0.15);
+    ">
+      <div style="font-size:32px; margin-bottom:12px;">${title.split(' ')[0]}</div>
+      <h3 style="font-family:'Rajdhani',sans-serif; font-size:var(--fs-xl);
+                 color:var(--text-white); margin-bottom:16px;">
+        ${title.substring(title.indexOf(' ')+1)}
+      </h3>
+      <p style="color:var(--text-white); font-size:var(--fs-base);
+                line-height:1.6; margin-bottom:12px;">${en}</p>
+      <p style="color:var(--text-muted); font-size:var(--fs-sm);
+                line-height:1.6; margin-bottom:24px;">${hi}</p>
+      <button onclick="document.getElementById('bilingual-popup').remove(); (${onOk.toString()})();"
+              class="btn btn-primary" style="min-width:120px;">
+        OK
+      </button>
+    </div>
+  `;
+  document.body.appendChild(popup);
 }
 
 // =============================================================
@@ -2414,7 +2758,7 @@ function handleLogout() {
   AppState.currentClassId = null;
   AppState.currentFolderId = null;
   AppState.breadcrumbs = [];
-  sessionStorage.removeItem('bci_session');
+  clearSession();
   showToast('Logged out successfully.', 'info');
   // Clear dashboard HTML to free memory
   const dashArea = document.getElementById('dashboard-area');
@@ -2426,28 +2770,158 @@ function handleLogout() {
 // LOAD CLASSES INTO REGISTER DROPDOWN
 // Reads from Firebase /classes collection
 // =============================================================
+// Class dropdowns for reg/login are now board-filtered on demand.
+// This function is kept so existing calls don't break but does nothing.
 async function loadClassesIntoDropdown() {
-  const select = document.getElementById('reg-class');
-  if (!select) return;
+  // reg-class and login-class are populated via onRegBoardChange() / onLoginBoardChange()
+  // when the student selects their board. Do not overwrite them here.
+}
+
+// =============================================================
+// LOAD ACTIVE SESSION into registration & login dropdowns
+// =============================================================
+async function loadActiveSessionIntoDropdowns() {
+  const selectors = ['reg-session', 'login-session'];
   try {
-    const snap = await db.collection('classes').orderBy('order').get();
-    select.innerHTML = '<option value="">-- Apni class chunein --</option>';
-    if (snap.empty) {
-      // Fallback to default classes if Firebase empty
-      INSTITUTE_CONFIG.classes.forEach(cls => {
-        select.innerHTML += `<option value="${cls}">${cls}</option>`;
-      });
-    } else {
-      snap.forEach(doc => {
-        const c = doc.data();
-        select.innerHTML += `<option value="${doc.id}">${c.name}</option>`;
-      });
+    const snap = await db.collection('sessions').where('isActive', '==', true).get();
+    for (const id of selectors) {
+      const select = document.getElementById(id);
+      if (!select) continue;
+      select.innerHTML = '<option value="">-- Select Session --</option>';
+      if (snap.empty) {
+        select.innerHTML += '<option value="2026-27">2026-27</option>';
+      } else {
+        snap.forEach(doc => {
+          select.innerHTML += `<option value="${doc.id}">${doc.id}</option>`;
+        });
+      }
     }
   } catch {
-    // Fallback to default classes
-    INSTITUTE_CONFIG.classes.forEach(cls => {
-      select.innerHTML += `<option value="${cls}">${cls}</option>`;
+    for (const id of selectors) {
+      const select = document.getElementById(id);
+      if (select) select.innerHTML = '<option value="2026-27">2026-27</option>';
+    }
+  }
+}
+
+// =============================================================
+// SESSION MANAGEMENT (Admin)
+// Multiple sessions can be active simultaneously.
+// Active sessions appear in student registration & login dropdowns.
+// =============================================================
+async function loadAdminSessions() {
+  const container = document.getElementById('sessions-list');
+  if (!container) return;
+  container.innerHTML = '<div class="loading-screen"><div class="spinner"></div></div>';
+  try {
+    const snap = await db.collection('sessions').orderBy('createdAt', 'desc').get();
+    if (snap.empty) {
+      container.innerHTML = '<p style="color:var(--text-muted);font-size:var(--fs-sm);">No sessions yet. Add one!</p>';
+      return;
+    }
+    container.innerHTML = '';
+    snap.forEach(doc => {
+      const s = doc.data();
+      const isActive = s.isActive === true;
+      container.innerHTML += `
+        <div style="display:flex;align-items:center;justify-content:space-between;
+                    padding:14px 0;border-bottom:1px solid var(--border);gap:12px;">
+          <div style="display:flex;align-items:center;gap:14px;">
+            <!-- Toggle switch -->
+            <div onclick="toggleSession('${doc.id}', ${isActive})"
+                 title="${isActive ? 'Click to Deactivate' : 'Click to Activate'}"
+                 style="width:44px;height:24px;border-radius:12px;cursor:pointer;
+                        background:${isActive ? 'var(--success)' : 'var(--border)'};
+                        position:relative;transition:background 0.2s;flex-shrink:0;
+                        box-shadow:${isActive ? '0 0 8px #00ff8844' : 'none'};">
+              <div style="width:18px;height:18px;border-radius:50%;background:#fff;
+                          position:absolute;top:3px;
+                          left:${isActive ? '23px' : '3px'};
+                          transition:left 0.2s;"></div>
+            </div>
+            <div>
+              <div style="font-weight:600;color:var(--text-white);font-size:var(--fs-base);">
+                📅 ${doc.id}
+              </div>
+              <div style="font-size:var(--fs-xs);margin-top:2px;
+                          color:${isActive ? 'var(--success)' : 'var(--text-dim)'};">
+                ${isActive ? '🟢 Active — visible in registration & login' : '⚫ Inactive'}
+              </div>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;flex-shrink:0;">
+            <span style="font-size:var(--fs-xs);font-weight:700;letter-spacing:0.5px;
+                         color:${isActive ? 'var(--success)' : 'var(--text-dim)'};
+                         min-width:52px;text-align:right;">
+              ${isActive ? 'ACTIVE' : 'INACTIVE'}
+            </span>
+            <button class="btn btn-sm btn-danger" onclick="deleteSession('${doc.id}')">🗑️</button>
+          </div>
+        </div>`;
     });
+  } catch (err) {
+    container.innerHTML = '<p style="color:var(--danger);">Could not load sessions.</p>';
+  }
+}
+
+async function handleAddSession() {
+  const name = document.getElementById('new-session-name').value.trim();
+  const msg  = document.getElementById('session-msg');
+  if (!name) {
+    msg.innerHTML = '<div class="info-box" style="color:var(--danger);">Please enter a session name.</div>';
+    return;
+  }
+  if (!/^\d{4}-\d{2}$/.test(name)) {
+    msg.innerHTML = '<div class="info-box" style="color:var(--danger);">Format must be YYYY-YY (e.g. 2027-28)</div>';
+    return;
+  }
+  try {
+    const existing = await db.collection('sessions').doc(name).get();
+    if (existing.exists) {
+      msg.innerHTML = '<div class="info-box" style="color:var(--danger);">This session already exists!</div>';
+      return;
+    }
+    // Auto-activate only if this is the very first session
+    const activeSnap = await db.collection('sessions').where('isActive','==',true).get();
+    const isFirst = activeSnap.empty;
+    await db.collection('sessions').doc(name).set({
+      isActive: isFirst,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    document.getElementById('new-session-name').value = '';
+    msg.innerHTML = `<div class="info-box" style="color:var(--success);">✅ Session "${name}" added!${isFirst ? ' (Auto-activated as first session)' : ' Toggle it ON when ready.'}</div>`;
+    loadAdminSessions();
+    loadActiveSessionIntoDropdowns();
+  } catch (err) {
+    msg.innerHTML = '<div class="info-box" style="color:var(--danger);">Failed to add session. Try again.</div>';
+  }
+}
+
+// Toggle a session active/inactive independently
+// Multiple sessions can be active at the same time
+async function toggleSession(sessionId, currentlyActive) {
+  const newState = !currentlyActive;
+  try {
+    await db.collection('sessions').doc(sessionId).update({ isActive: newState });
+    showToast(
+      newState ? `✅ Session "${sessionId}" is now Active!` : `🔒 Session "${sessionId}" set to Inactive.`,
+      newState ? 'success' : 'info'
+    );
+    loadAdminSessions();
+    loadActiveSessionIntoDropdowns();
+  } catch (err) {
+    showToast('Failed to update session. Try again.', 'error');
+  }
+}
+
+async function deleteSession(sessionId) {
+  if (!confirm(`Delete session "${sessionId}"? This cannot be undone.`)) return;
+  try {
+    await db.collection('sessions').doc(sessionId).delete();
+    showToast(`Session "${sessionId}" deleted.`, 'info');
+    loadAdminSessions();
+  } catch (err) {
+    showToast('Failed to delete session.', 'error');
   }
 }
 
@@ -2460,6 +2934,7 @@ async function loadHomeNotices() {
   if (!container) return;
   try {
     const snap = await db.collection('notices')
+      .where('isPublic', '==', true)
       .orderBy('createdAt', 'desc')
       .limit(5)
       .get();
@@ -2527,6 +3002,7 @@ buildPageHTML();
 setTimeout(() => {
   loadHomeNotices();
   loadClassesIntoDropdown();
+  loadActiveSessionIntoDropdowns();
 }, 100);
 
 console.log('✅ PART 2: Homepage & Auth loaded');
@@ -2595,9 +3071,9 @@ function buildStudentDashboardHTML() {
       <div class="sidebar-user">
         <div class="sidebar-user-name">👤 ${student.name}</div>
         <div class="sidebar-user-role">
-          🎓 ${student.class} &nbsp;|&nbsp; Student
+          🎓 ${student.class} &nbsp;|&nbsp; Roll: ${student.roll || '—'}
         </div>
-        ${student.roll ? `<div style="font-size:var(--fs-xs);color:var(--text-dim);margin-top:2px;">Roll: ${student.roll}</div>` : ''}
+        <div style="font-size:var(--fs-xs);color:var(--text-dim);margin-top:2px;">📅 ${student.session || '—'}</div>
       </div>
 
       <!-- Navigation -->
@@ -2627,6 +3103,7 @@ function buildStudentDashboardHTML() {
 
       <!-- Logout -->
       <div class="sidebar-footer">
+        <div id="student-session-expiry" style="font-size:10px;color:var(--text-dim);text-align:center;margin-bottom:8px;"></div>
         <button class="btn btn-danger w-full btn-sm" onclick="confirmLogout()">
           🚪 Logout
         </button>
@@ -2671,6 +3148,10 @@ function buildStudentDashboardHTML() {
           </p>
           <div style="margin-top:16px;">
             <span class="badge badge-blue">🎓 ${student.class}</span>
+            &nbsp;
+            <span class="badge ${(student.board||'BSEB')==='CBSE' ? 'badge-green' : 'badge-blue'}">
+              ${(student.board||'BSEB')==='CBSE' ? '📗 CBSE' : '📘 BSEB'}
+            </span>
             &nbsp;
             <span class="badge badge-green">✅ Active Student</span>
           </div>
@@ -2789,12 +3270,18 @@ function buildStudentDashboardHTML() {
             <div class="card-title">📋 My <span>Details</span></div>
             <div style="display:flex; flex-direction:column; gap:16px;">
               ${[
-                { icon:'👤', label:'Full Name',     val: student.name },
-                { icon:'📱', label:'Mobile Number', val: student.mobile },
+                { icon:'📅', label:'Session',       val: student.session || '—' },
+                { icon:'📋', label:'Board',         val: student.board || 'BSEB' },
                 { icon:'🎓', label:'Class',         val: student.class },
-                { icon:'🔢', label:'Roll Number',   val: student.roll || 'Not provided' },
-                { icon:'📧', label:'Email',         val: student.email || 'Not provided' },
-                { icon:'📍', label:'Address',       val: student.address || 'Not provided' },
+                { icon:'🔢', label:'Roll Number',   val: student.roll || '—' },
+                { icon:'👤', label:'Full Name',     val: student.name },
+                { icon:'⚧', label:'Gender',        val: student.gender || '—' },
+                { icon:'🎂', label:'Date of Birth', val: student.dob || '—' },
+                { icon:'📱', label:'Mobile Number', val: student.mobile },
+                { icon:'📱', label:'Alt. Mobile',   val: student.altMobile || 'Not provided' },
+                { icon:'👨', label:"Father's Name", val: student.father || '—' },
+                { icon:'👩', label:"Mother's Name", val: student.mother || '—' },
+                { icon:'📍', label:'Address',       val: student.address || '—' },
               ].map(item => `
                 <div style="display:flex; gap:12px; align-items:flex-start;
                             padding-bottom:14px; border-bottom:1px solid var(--border);">
@@ -2976,6 +3463,7 @@ async function loadStudentNotices() {
   container.innerHTML = '<div class="loading-screen"><div class="spinner"></div></div>';
   try {
     const snap = await db.collection('notices')
+      .where('isPublic', '==', true)
       .orderBy('createdAt', 'desc')
       .get();
 
@@ -3367,10 +3855,7 @@ async function handleChangePassword() {
     });
     // Update local session
     AppState.currentUser.password = newPass;
-    sessionStorage.setItem('bci_session', JSON.stringify({
-      user: AppState.currentUser,
-      isAdmin: false
-    }));
+    saveSession({ user: AppState.currentUser, isAdmin: false });
     showPassMsg('✅ Password updated successfully!', 'success');
     // Clear fields
     ['s-current-pass', 's-new-pass', 's-confirm-pass'].forEach(id => {
@@ -3533,15 +4018,18 @@ function buildAdminDashboardHTML() {
         </div>
 
         <div class="nav-section-title">System</div>
-        <div class="nav-item" data-page="a-page-settings"
-             onclick="showAdminPage('a-page-settings')">
-          <span class="nav-icon">⚙️</span> Settings
+        <div class="nav-item" data-page="a-page-sessions"
+             onclick="showAdminPage('a-page-sessions'); loadAdminSessions()">
+          <span class="nav-icon">📅</span> Sessions
         </div>
+        <div class="nav-item" data-page="a-page-settings"
+             onclick="showAdminPage('a-page-settings')">\n          <span class="nav-icon">⚙️</span> Settings\n        </div>
 
       </nav>
 
       <!-- Logout -->
       <div class="sidebar-footer">
+        <div id="admin-session-expiry" style="font-size:10px;color:var(--text-dim);text-align:center;margin-bottom:8px;"></div>
         <button class="btn btn-danger w-full btn-sm" onclick="confirmLogout()">
           🚪 Logout
         </button>
@@ -3668,30 +4156,56 @@ function buildAdminDashboardHTML() {
                   onclick="showAdminPage('a-page-add-student')">
             ➕ Add Student
           </button>
+          <button class="btn btn-outline"
+                  onclick="printStudentList()">
+            🖨️ Print List
+          </button>
         </div>
 
         <!-- Search and filter bar -->
-        <div style="display:flex; gap:12px; margin-bottom:20px; flex-wrap:wrap;">
+        <div style="display:flex; gap:12px; margin-bottom:12px; flex-wrap:wrap;">
           <div class="search-bar" style="flex:1; min-width:200px;">
             <span class="search-bar-icon">🔍</span>
-            <input type="text" placeholder="Search by name or mobile..."
+            <input type="text" placeholder="Search by name, mobile, roll no..."
                    id="student-search-input"
                    oninput="filterStudentsTable()">
           </div>
+          <button class="btn btn-outline btn-sm" onclick="resetStudentFilters()"
+                  style="white-space:nowrap;">🔄 Reset Filters</button>
+        </div>
+
+        <!-- Filter row -->
+        <div style="display:flex; gap:10px; margin-bottom:20px; flex-wrap:wrap; align-items:center;">
+          <select class="form-control" id="student-board-filter"
+                  onchange="filterStudentsTable()" style="width:120px;">
+            <option value="">All Boards</option>
+            <option value="BSEB">📘 BSEB</option>
+            <option value="CBSE">📗 CBSE</option>
+          </select>
+          <select class="form-control" id="student-session-filter"
+                  onchange="filterStudentsTable()" style="width:130px;">
+            <option value="">All Sessions</option>
+          </select>
           <select class="form-control" id="student-class-filter"
-                  onchange="filterStudentsTable()"
-                  style="width:160px;">
+                  onchange="filterStudentsTable()" style="width:140px;">
             <option value="">All Classes</option>
           </select>
+          <select class="form-control" id="student-gender-filter"
+                  onchange="filterStudentsTable()" style="width:130px;">
+            <option value="">All Genders</option>
+            <option value="Male">👦 Male</option>
+            <option value="Female">👧 Female</option>
+            <option value="Other">🧑 Other</option>
+          </select>
           <select class="form-control" id="student-status-filter"
-                  onchange="filterStudentsTable()"
-                  style="width:150px;">
+                  onchange="filterStudentsTable()" style="width:140px;">
             <option value="">All Status</option>
             <option value="approved">✅ Active</option>
             <option value="pending">⏳ Pending</option>
             <option value="inactive">⛔ Inactive</option>
             <option value="rejected">❌ Rejected</option>
           </select>
+          <div id="student-filter-count" style="font-size:var(--fs-xs);color:var(--text-muted);white-space:nowrap;"></div>
         </div>
 
         <div class="table-wrapper">
@@ -3700,15 +4214,18 @@ function buildAdminDashboardHTML() {
               <tr>
                 <th>Name</th>
                 <th>Mobile</th>
+                <th>Session</th>
+                <th>Board</th>
                 <th>Class</th>
                 <th>Roll No</th>
+                <th>Gender</th>
                 <th>Registered</th>
                 <th>Status</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody id="a-students-tbody">
-              <tr><td colspan="7" style="text-align:center;padding:32px;">
+              <tr><td colspan="10" style="text-align:center;padding:32px;">
                 <div class="spinner" style="margin:0 auto;"></div>
               </td></tr>
             </tbody>
@@ -3726,70 +4243,119 @@ function buildAdminDashboardHTML() {
 
         <div class="page-header">
           <h1>➕ Add <span>Student</span></h1>
-          <p style="color:var(--text-muted);">
-            Manually add a student — account is approved instantly
-          </p>
+          <p style="color:var(--text-muted);">Manually add a student — account is approved instantly</p>
         </div>
 
-        <div style="max-width:600px;">
+        <div style="max-width:620px;">
           <div class="card">
-            <div class="info-box">
-              💡 Students added manually are approved instantly.
-              Share their mobile number and password with them directly.
-            </div>
-
+            <div class="info-box">💡 Students added manually are approved instantly. Share their Roll No and password with them directly.</div>
             <div id="add-student-msg"></div>
 
             <div class="form-row">
               <div class="form-group">
-                <label>Full Name <span class="required">*</span></label>
-                <input class="form-control" id="as-name" type="text"
-                       placeholder="Student's full name">
+                <label>Session <span class="required">*</span></label>
+                <select class="form-control" id="as-session"><option value="">-- Select --</option></select>
               </div>
               <div class="form-group">
-                <label>Mobile Number <span class="required">*</span></label>
-                <input class="form-control" id="as-mobile" type="tel"
-                       placeholder="10-digit mobile" maxlength="10">
+                <label>Board <span class="required">*</span></label>
+                <select class="form-control" id="as-board" onchange="onAsBoardChange()">
+                  <option value="">-- Select Board --</option>
+                  <option value="BSEB">📘 BSEB (Bihar Board)</option>
+                  <option value="CBSE">📗 CBSE</option>
+                </select>
               </div>
             </div>
 
             <div class="form-row">
               <div class="form-group">
                 <label>Class <span class="required">*</span></label>
-                <select class="form-control" id="as-class">
-                  <option value="">-- Select Class --</option>
+                <select class="form-control" id="as-class" disabled>
+                  <option value="">-- Select Board first --</option>
                 </select>
               </div>
               <div class="form-group">
-                <label>Password <span class="required">*</span></label>
-                <input class="form-control" id="as-password" type="text"
-                       placeholder="Set a password for student">
+                <label>Coaching Roll No. <span class="required">*</span></label>
+                <input class="form-control" id="as-roll" type="number" min="1" placeholder="e.g. 15">
               </div>
             </div>
 
             <div class="form-row">
               <div class="form-group">
-                <label>Roll Number <span class="optional">(optional)</span></label>
-                <input class="form-control" id="as-roll" type="text"
-                       placeholder="School roll number">
+                <label>Full Name <span class="required">*</span></label>
+                <input class="form-control" id="as-name" type="text" placeholder="Student's full name">
               </div>
               <div class="form-group">
-                <label>Email <span class="optional">(optional)</span></label>
-                <input class="form-control" id="as-email" type="email"
-                       placeholder="Email address">
+                <label>Gender <span class="required">*</span></label>
+                <select class="form-control" id="as-gender">
+                  <option value="">-- Select --</option>
+                  <option value="Male">Male</option>
+                  <option value="Female">Female</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label>Date of Birth <span class="required">*</span></label>
+                <input class="form-control" id="as-dob" type="date">
+              </div>
+              <div class="form-group">
+                <label>Mobile Number <span class="required">*</span></label>
+                <input class="form-control" id="as-mobile" type="tel" placeholder="10-digit mobile" maxlength="10">
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label>Alt. Mobile <span class="optional">(optional)</span></label>
+                <input class="form-control" id="as-alt-mobile" type="tel" placeholder="Alternative number" maxlength="10">
+              </div>
+              <div class="form-group">
+                <label>Password <span class="required">*</span></label>
+                <input class="form-control" id="as-password" type="text" placeholder="Set a password for student">
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label>Father's Name <span class="required">*</span></label>
+                <input class="form-control" id="as-father" type="text" placeholder="Father's full name">
+              </div>
+              <div class="form-group">
+                <label>Mother's Name <span class="required">*</span></label>
+                <input class="form-control" id="as-mother" type="text" placeholder="Mother's full name">
               </div>
             </div>
 
             <div class="form-group">
-              <label>Address <span class="optional">(optional)</span></label>
-              <input class="form-control" id="as-address" type="text"
-                     placeholder="Student's address">
+              <label>Address <span class="required">*</span></label>
+              <textarea class="form-control" id="as-address" rows="2" placeholder="Student's address" style="resize:vertical;"></textarea>
             </div>
 
-            <button class="btn btn-primary" onclick="handleAddStudentManually()"
-                    id="add-student-btn">
-              ➕ Add Student
-            </button>
+            <!-- Photo Upload -->
+            <div class="form-group">
+              <label>Photo <span class="optional">(optional)</span></label>
+              <div style="display:flex; align-items:center; gap:16px;">
+                <div id="as-photo-preview" style="
+                  width:64px; height:64px; border-radius:50%;
+                  background:var(--bg-card2); border:2px solid var(--border);
+                  display:flex; align-items:center; justify-content:center;
+                  font-size:28px; flex-shrink:0;">👤</div>
+                <div>
+                  <input type="file" id="as-photo" accept="image/*"
+                         onchange="previewAsPhoto(this)" style="display:none;">
+                  <button type="button"
+                          onclick="document.getElementById('as-photo').click()"
+                          class="btn btn-outline btn-sm">📷 Upload Photo</button>
+                  <div style="font-size:var(--fs-xs);color:var(--text-dim);margin-top:4px;">
+                    JPG/PNG, max 2MB. Default photo used if not uploaded.
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <button class="btn btn-primary" onclick="handleAddStudentManually()" id="add-student-btn">➕ Add Student</button>
           </div>
         </div>
 
@@ -3808,10 +4374,10 @@ function buildAdminDashboardHTML() {
               🎓 Manage <span style="color:var(--neon-blue);">Classes</span>
             </h1>
             <p style="color:var(--text-muted); margin-top:4px;">
-              Add, rename or remove classes
+              Add, rename or remove classes — organised by board
             </p>
           </div>
-          <button class="btn btn-primary" onclick="openModal('modal-add-class')">
+          <button class="btn btn-primary" onclick="openAddClassModal()">
             ➕ Add New Class
           </button>
         </div>
@@ -3821,6 +4387,24 @@ function buildAdminDashboardHTML() {
           Deleting a class will permanently remove ALL folders, materials
           and student access linked to that class. This cannot be undone.
           Students in that class will lose access immediately.
+        </div>
+
+        <!-- Board Tabs -->
+        <div style="display:flex; gap:0; margin-bottom:24px; border-bottom:2px solid var(--border);">
+          <button id="tab-bseb" onclick="switchClassTab('BSEB')" style="
+            padding:10px 28px; font-family:'Rajdhani',sans-serif; font-weight:700;
+            font-size:var(--fs-base); border:none; cursor:pointer; letter-spacing:0.5px;
+            background:transparent; border-bottom:3px solid var(--neon-blue);
+            color:var(--neon-blue); margin-bottom:-2px; transition:all 0.2s;">
+            📘 BSEB (Bihar Board)
+          </button>
+          <button id="tab-cbse" onclick="switchClassTab('CBSE')" style="
+            padding:10px 28px; font-family:'Rajdhani',sans-serif; font-weight:700;
+            font-size:var(--fs-base); border:none; cursor:pointer; letter-spacing:0.5px;
+            background:transparent; border-bottom:3px solid transparent;
+            color:var(--text-muted); margin-bottom:-2px; transition:all 0.2s;">
+            📗 CBSE
+          </button>
         </div>
 
         <div id="a-classes-grid"
@@ -3880,6 +4464,35 @@ function buildAdminDashboardHTML() {
 
       </div><!-- end a-page-notices -->
 
+
+      <!-- ================================================
+           ADMIN PAGE: SESSIONS
+           ID: a-page-sessions
+           ================================================ -->
+      <div id="a-page-sessions" class="page">
+        <div class="page-header">
+          <h1>📅 <span>Sessions</span></h1>
+          <p style="color:var(--text-muted);">Manage academic sessions. The active session appears in student registration and login.</p>
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:24px; max-width:800px;">
+          <!-- Add new session -->
+          <div class="card">
+            <div class="card-title">➕ Add New <span>Session</span></div>
+            <div id="session-msg"></div>
+            <div class="form-group">
+              <label>Session Name <span class="required">*</span></label>
+              <input class="form-control" id="new-session-name" placeholder="e.g. 2027-28">
+              <div style="font-size:var(--fs-xs); color:var(--text-dim); margin-top:4px;">Format: YYYY-YY (e.g. 2026-27)</div>
+            </div>
+            <button class="btn btn-primary" onclick="handleAddSession()">➕ Add Session</button>
+          </div>
+          <!-- Sessions list -->
+          <div class="card">
+            <div class="card-title">📋 All <span>Sessions</span></div>
+            <div id="sessions-list"><div class="loading-screen"><div class="spinner"></div></div></div>
+          </div>
+        </div>
+      </div><!-- end a-page-sessions -->
 
       <!-- ================================================
            ADMIN PAGE: SETTINGS
@@ -3979,6 +4592,13 @@ function buildAdminDashboardHTML() {
       <div class="modal-header">
         <div class="modal-title">🎓 Add New Class</div>
         <button class="modal-close" onclick="closeModal('modal-add-class')">✕</button>
+      </div>
+      <div class="form-group">
+        <label>Board <span class="required">*</span></label>
+        <select class="form-control" id="new-class-board">
+          <option value="BSEB">📘 BSEB (Bihar Board)</option>
+          <option value="CBSE">📗 CBSE</option>
+        </select>
       </div>
       <div class="form-group">
         <label>Class Name <span class="required">*</span></label>
@@ -4229,7 +4849,7 @@ async function loadAdminHomePending() {
               return `<tr>
                 <td><strong>${s.name}</strong></td>
                 <td>${s.mobile}</td>
-                <td><span class="badge badge-blue">${s.class}</span></td>
+                <td><span class="badge badge-blue">${getClassName(s.class)}</span></td>
                 <td>${formatDate(s.createdAt)}</td>
                 <td style="display:flex; gap:6px;">
                   <button class="btn btn-success btn-sm"
@@ -4267,6 +4887,15 @@ async function loadPendingStudents() {
   container.innerHTML = '<div class="loading-screen"><div class="spinner"></div></div>';
 
   try {
+    // Ensure class name map is loaded
+    if (!window._classNameMap) {
+      const classSnap = await db.collection('classes').get();
+      window._classNameMap = {};
+      classSnap.forEach(doc => {
+        window._classNameMap[doc.id] = doc.data().name || doc.id;
+      });
+    }
+
     const snap = await db.collection('students')
       .where('status', '==', 'pending')
       .orderBy('createdAt', 'desc')
@@ -4284,6 +4913,8 @@ async function loadPendingStudents() {
 
     container.innerHTML = snap.docs.map(doc => {
       const s = doc.data();
+      const className = getClassName(s.class);
+      const studentId = s.studentId || doc.id;
       return `
         <div class="card" style="margin-bottom:14px;">
           <div style="display:flex; justify-content:space-between;
@@ -4295,16 +4926,20 @@ async function loadPendingStudents() {
                 border:1px solid rgba(0,212,255,0.3);
                 display:flex; align-items:center; justify-content:center;
                 font-size:20px; flex-shrink:0;
-              ">👤</div>
+              ">${s.photo ? `<img src="${s.photo}" style="width:48px;height:48px;border-radius:50%;object-fit:cover;">` : '👤'}</div>
               <div>
                 <div style="font-weight:700; font-size:var(--fs-md);
-                            margin-bottom:6px;">${s.name}</div>
+                            margin-bottom:4px;">${s.name}</div>
+                <div style="font-size:var(--fs-xs); color:var(--neon-blue);
+                            margin-bottom:6px; font-weight:600;">
+                  🪪 ${studentId}
+                </div>
                 <div style="display:flex; gap:8px; flex-wrap:wrap;
                             font-size:var(--fs-xs); color:var(--text-muted);">
                   <span>📱 ${s.mobile}</span>
-                  <span>🎓 ${s.class}</span>
+                  <span>🎓 ${className}</span>
+                  <span class="badge ${(s.board||'BSEB')==='CBSE' ? 'badge-green' : 'badge-blue'}" style="font-size:10px;">${(s.board||'BSEB')==='CBSE' ? '📗 CBSE' : '📘 BSEB'}</span>
                   ${s.roll ? `<span>🔢 Roll: ${s.roll}</span>` : ''}
-                  ${s.email ? `<span>📧 ${s.email}</span>` : ''}
                   ${s.address ? `<span>📍 ${s.address}</span>` : ''}
                   <span>📅 Registered: ${formatDate(s.createdAt)}</span>
                 </div>
@@ -4376,6 +5011,13 @@ async function loadAllStudents() {
   if (!tbody) return;
 
   try {
+    // Load class name map first: { "class-cbse-class-9-xxx": "Class 9", ... }
+    const classSnap = await db.collection('classes').get();
+    window._classNameMap = {};
+    classSnap.forEach(doc => {
+      window._classNameMap[doc.id] = doc.data().name || doc.id;
+    });
+
     const snap = await db.collection('students')
       .orderBy('createdAt', 'desc')
       .get();
@@ -4390,11 +5032,25 @@ async function loadAllStudents() {
     loadClassFilterDropdown();
 
   } catch (err) {
-    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;
+    tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;
       color:var(--text-muted);">Could not load students.</td></tr>`;
   }
 }
 
+
+// Helper: get class display name from doc ID
+// e.g. "class-cbse-class-9-1772711310827" → "Class 9"
+// Falls back to the stored name field or the ID itself
+function getClassName(classId) {
+  if (!classId) return '—';
+  if (window._classNameMap && window._classNameMap[classId]) {
+    return window._classNameMap[classId];
+  }
+  // Fallback: try to extract from ID pattern "class-X" → "Class X"
+  const simple = classId.match(/^class-(\d+)$/);
+  if (simple) return `Class ${simple[1]}`;
+  return classId;
+}
 
 // =============================================================
 // RENDER STUDENTS TABLE (called by filter functions too)
@@ -4404,7 +5060,7 @@ function renderStudentsTable(students) {
   if (!tbody) return;
 
   if (students.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;
+    tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;
       padding:32px; color:var(--text-muted);">No students found.</td></tr>`;
     return;
   }
@@ -4419,12 +5075,21 @@ function renderStudentsTable(students) {
   tbody.innerHTML = students.map(s => `
     <tr>
       <td>
-        <strong>${s.name}</strong>
-        ${s.email ? `<div style="font-size:var(--fs-xs);color:var(--text-dim);">${s.email}</div>` : ''}
+        <div style="display:flex;align-items:center;gap:8px;">
+          ${s.photo ? `<img src="${s.photo}" style="width:32px;height:32px;border-radius:50%;object-fit:cover;flex-shrink:0;">` : `<div style="width:32px;height:32px;border-radius:50%;background:var(--bg-card2);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;">👤</div>`}
+          <div><strong>${s.name}</strong><div style="font-size:var(--fs-xs);color:var(--text-dim);">${s.father ? 'S/O '+s.father : s.mobile}</div></div>
+        </div>
       </td>
       <td>${s.mobile}</td>
-      <td><span class="badge badge-blue">${s.class}</span></td>
-      <td>${s.roll || '—'}</td>
+      <td><span class="badge badge-blue" style="font-size:10px;">${s.session || '—'}</span></td>
+      <td>
+        <span class="badge ${(s.board||'BSEB')==='CBSE' ? 'badge-green' : 'badge-blue'}" style="font-size:10px;">
+          ${(s.board||'BSEB')==='CBSE' ? '📗 CBSE' : '📘 BSEB'}
+        </span>
+      </td>
+      <td><span class="badge badge-blue">${getClassName(s.class)}</span></td>
+      <td style="font-weight:600;">${s.roll || '—'}</td>
+      <td>${s.gender || '—'}</td>
       <td>${formatDate(s.createdAt)}</td>
       <td>${statusBadge[s.status] || statusBadge.pending}</td>
       <td>
@@ -4461,42 +5126,207 @@ function renderStudentsTable(students) {
 
 
 // =============================================================
-// FILTER STUDENTS TABLE (search + class + status)
+// PRINT STUDENT LIST — A4 Black & White
+// Prints currently filtered students
+// =============================================================
+function printStudentList() {
+  if (!window._allStudents || window._allStudents.length === 0) {
+    showToast('No students to print.', 'error'); return;
+  }
+
+  const q       = document.getElementById('student-search-input')?.value.toLowerCase() || '';
+  const board   = document.getElementById('student-board-filter')?.value || '';
+  const session = document.getElementById('student-session-filter')?.value || '';
+  const cls     = document.getElementById('student-class-filter')?.value || '';
+  const gender  = document.getElementById('student-gender-filter')?.value || '';
+  const status  = document.getElementById('student-status-filter')?.value || '';
+
+  const students = window._allStudents.filter(s => {
+    const matchQ  = !q      || s.name.toLowerCase().includes(q) || (s.mobile||'').includes(q) || String(s.roll||'').includes(q);
+    const matchB  = !board  || (s.board || 'BSEB') === board;
+    const matchSe = !session || s.session === session;
+    const matchC  = !cls    || s.class   === cls;
+    const matchG  = !gender || s.gender  === gender;
+    const matchSt = !status || s.status  === status;
+    return matchQ && matchB && matchSe && matchC && matchG && matchSt;
+  });
+
+  if (students.length === 0) {
+    showToast('No students match current filters.', 'error'); return;
+  }
+
+  const filterParts = [];
+  if (board)   filterParts.push(`Board: ${board}`);
+  if (session) filterParts.push(`Session: ${session}`);
+  if (cls)     filterParts.push(`Class: ${cls}`);
+  if (gender)  filterParts.push(`Gender: ${gender}`);
+  if (status)  filterParts.push(`Status: ${status}`);
+  if (q)       filterParts.push(`Search: "${q}"`);
+  const filterDesc = filterParts.length ? filterParts.join(' | ') : 'All Students';
+
+  const now = new Date();
+  const dateStr = now.toLocaleDateString('en-IN', { day:'2-digit', month:'long', year:'numeric' });
+
+  const rows = students.map((s, i) => `
+    <tr>
+      <td>${i + 1}</td>
+      <td>${s.roll || '—'}</td>
+      <td>${s.name}</td>
+      <td>${s.session || '—'}</td>
+      <td>${s.board || 'BSEB'}</td>
+      <td>${getClassName(s.class)}</td>
+      <td>${s.gender || '—'}</td>
+      <td>${s.dob || '—'}</td>
+      <td>${s.mobile}</td>
+      <td>${s.altMobile || '—'}</td>
+      <td>${s.father || '—'}</td>
+      <td>${s.mother || '—'}</td>
+      <td>${s.address || '—'}</td>
+      <td>${s.status}</td>
+    </tr>
+  `).join('');
+
+  const printHTML = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>BCI Student List</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family: Arial, sans-serif; font-size: 8px; color: #000; background: #fff; }
+    .header { text-align:center; border-bottom: 2px solid #000; padding-bottom: 8px; margin-bottom: 10px; }
+    .header h1 { font-size: 16px; font-weight: bold; letter-spacing: 1px; }
+    .header h2 { font-size: 11px; font-weight: normal; margin-top: 2px; }
+    .meta { display:flex; justify-content:space-between; font-size:8px; margin-bottom:8px; }
+    .meta span { font-weight: bold; }
+    table { width:100%; border-collapse: collapse; }
+    th { background: #000; color: #fff; padding: 4px 3px; text-align:left; font-size:7px; text-transform:uppercase; letter-spacing:0.3px; }
+    td { padding: 3px; border-bottom: 1px solid #ccc; font-size:7.5px; vertical-align:top; word-break:break-word; }
+    tr:nth-child(even) td { background: #f5f5f5; }
+    .footer { margin-top:12px; text-align:center; font-size:7px; color:#555; border-top:1px solid #ccc; padding-top:6px; }
+    @page { size: A4 landscape; margin: 10mm; }
+    @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>BRILLIANT COACHING INSTITUTE (B.C.I) — BUXAR</h1>
+    <h2>Turha Toli, Mahavir Asthan, Civil Lines, Buxar — 802101 | Contact: 6206437776</h2>
+  </div>
+  <div class="meta">
+    <div>Filter: <span>${filterDesc}</span></div>
+    <div>Total Students: <span>${students.length}</span></div>
+    <div>Printed on: <span>${dateStr}</span></div>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>#</th><th>Roll</th><th>Full Name</th><th>Session</th>
+        <th>Board</th><th>Class</th><th>Gender</th><th>DOB</th>
+        <th>Mobile</th><th>Alt. Mobile</th><th>Father's Name</th>
+        <th>Mother's Name</th><th>Address</th><th>Status</th>
+      </tr>
+    </thead>
+    <tbody>${rows}</tbody>
+  </table>
+  <div class="footer">
+    Brilliant Coaching Institute, Buxar — Confidential Student Record — ${dateStr}
+  </div>
+  <script>window.onload = function(){ window.print(); window.onafterprint = function(){ window.close(); }; }<\/script>
+</body>
+</html>`;
+
+  const win = window.open('', '_blank', 'width=1200,height=800');
+  win.document.write(printHTML);
+  win.document.close();
+}
+
+// =============================================================
+// FILTER STUDENTS TABLE
 // =============================================================
 function filterStudentsTable() {
   if (!window._allStudents) return;
-  const q      = document.getElementById('student-search-input')?.value.toLowerCase() || '';
-  const cls    = document.getElementById('student-class-filter')?.value || '';
-  const status = document.getElementById('student-status-filter')?.value || '';
+  const q       = document.getElementById('student-search-input')?.value.toLowerCase() || '';
+  const board   = document.getElementById('student-board-filter')?.value || '';
+  const session = document.getElementById('student-session-filter')?.value || '';
+  const cls     = document.getElementById('student-class-filter')?.value || '';
+  const gender  = document.getElementById('student-gender-filter')?.value || '';
+  const status  = document.getElementById('student-status-filter')?.value || '';
 
   const filtered = window._allStudents.filter(s => {
-    const matchQ = !q || s.name.toLowerCase().includes(q) || s.mobile.includes(q);
-    const matchC = !cls || s.class === cls;
-    const matchS = !status || s.status === status;
-    return matchQ && matchC && matchS;
+    const matchQ  = !q      || s.name.toLowerCase().includes(q) || (s.mobile||'').includes(q) || String(s.roll||'').includes(q);
+    const matchB  = !board  || (s.board || 'BSEB') === board;
+    const matchSe = !session || s.session === session;
+    const matchC  = !cls    || s.class   === cls;
+    const matchG  = !gender || s.gender  === gender;
+    const matchSt = !status || s.status  === status;
+    return matchQ && matchB && matchSe && matchC && matchG && matchSt;
   });
 
   renderStudentsTable(filtered);
+
+  const countEl = document.getElementById('student-filter-count');
+  if (countEl) {
+    const total = window._allStudents.length;
+    countEl.textContent = filtered.length === total
+      ? `${total} students`
+      : `${filtered.length} of ${total} students`;
+  }
+}
+
+function resetStudentFilters() {
+  ['student-search-input','student-board-filter','student-session-filter',
+   'student-class-filter','student-gender-filter','student-status-filter'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  filterStudentsTable();
 }
 
 
 // =============================================================
-// LOAD CLASS FILTER DROPDOWN in students table
+// LOAD CLASS & SESSION FILTER DROPDOWNS in students table
 // =============================================================
 async function loadClassFilterDropdown() {
+  // Load classes grouped by board
   const sel = document.getElementById('student-class-filter');
-  if (!sel) return;
-  try {
-    const snap = await db.collection('classes').orderBy('order').get();
-    sel.innerHTML = '<option value="">All Classes</option>';
-    snap.forEach(doc => {
-      sel.innerHTML += `<option value="${doc.id}">${doc.data().name}</option>`;
-    });
-  } catch {
-    // Use default classes as fallback
-    INSTITUTE_CONFIG.classes.forEach(cls => {
-      sel.innerHTML += `<option value="${cls}">${cls}</option>`;
-    });
+  if (sel) {
+    try {
+      const snap = await db.collection('classes').orderBy('order').get();
+      sel.innerHTML = '<option value="">All Classes</option>';
+      // BSEB first
+      snap.docs.filter(d => !d.data().board || d.data().board === 'BSEB').forEach(doc => {
+        sel.innerHTML += `<option value="${doc.id}">[BSEB] ${doc.data().name}</option>`;
+      });
+      // CBSE next
+      snap.docs.filter(d => d.data().board === 'CBSE').forEach(doc => {
+        sel.innerHTML += `<option value="${doc.id}">[CBSE] ${doc.data().name}</option>`;
+      });
+    } catch {
+      INSTITUTE_CONFIG.classes.forEach(cls => {
+        sel.innerHTML += `<option value="${cls}">${cls}</option>`;
+      });
+    }
+  }
+
+  // Load sessions
+  const sesSel = document.getElementById('student-session-filter');
+  if (sesSel) {
+    try {
+      const snap = await db.collection('sessions').orderBy('createdAt','desc').get();
+      sesSel.innerHTML = '<option value="">All Sessions</option>';
+      snap.forEach(doc => {
+        sesSel.innerHTML += `<option value="${doc.id}">${doc.id}</option>`;
+      });
+    } catch {
+      sesSel.innerHTML = '<option value="">All Sessions</option><option value="2026-27">2026-27</option>';
+    }
+  }
+
+  // Update count
+  const countEl = document.getElementById('student-filter-count');
+  if (countEl && window._allStudents) {
+    countEl.textContent = `${window._allStudents.length} students`;
   }
 }
 
@@ -4510,16 +5340,24 @@ function viewStudentDetails(mobile) {
 
   document.getElementById('view-student-content').innerHTML = `
     <div style="display:flex; flex-direction:column; gap:14px;">
+      ${student.photo ? `<div style="text-align:center;margin-bottom:8px;"><img src="${student.photo}" style="width:80px;height:80px;border-radius:50%;object-fit:cover;border:2px solid var(--neon-blue);"></div>` : ''}
       ${[
-        { icon:'👤', label:'Full Name',     val: student.name },
-        { icon:'📱', label:'Mobile Number', val: student.mobile },
-        { icon:'🎓', label:'Class',         val: student.class },
-        { icon:'🔒', label:'Password',      val: student.password },
-        { icon:'🔢', label:'Roll Number',   val: student.roll    || '—' },
-        { icon:'📧', label:'Email',         val: student.email   || '—' },
-        { icon:'📍', label:'Address',       val: student.address || '—' },
-        { icon:'📅', label:'Registered',    val: formatDate(student.createdAt) },
-        { icon:'📊', label:'Status',        val: student.status },
+        { icon:'🪪', label:'Student ID',      val: `<strong style="color:var(--neon-blue);">${student.studentId || student.id}</strong>` },
+        { icon:'📅', label:'Session',         val: student.session || '—' },
+        { icon:'📋', label:'Board',           val: student.board || 'BSEB' },
+        { icon:'🎓', label:'Class',           val: getClassName(student.class) },
+        { icon:'🔢', label:'Roll Number',     val: student.roll    || '—' },
+        { icon:'👤', label:'Full Name',       val: student.name },
+        { icon:'⚧',  label:'Gender',          val: student.gender  || '—' },
+        { icon:'🎂', label:'Date of Birth',   val: student.dob     || '—' },
+        { icon:'📱', label:'Mobile',          val: student.mobile },
+        { icon:'📱', label:'Alt. Mobile',     val: student.altMobile || '—' },
+        { icon:'🔒', label:'Password',        val: student.password },
+        { icon:'👨', label:"Father's Name",   val: student.father  || '—' },
+        { icon:'👩', label:"Mother's Name",   val: student.mother  || '—' },
+        { icon:'📍', label:'Address',         val: student.address || '—' },
+        { icon:'📅', label:'Registered',      val: formatDate(student.createdAt) },
+        { icon:'📊', label:'Status',          val: student.status },
       ].map(item => `
         <div style="display:flex; gap:12px; padding-bottom:12px;
                     border-bottom:1px solid var(--border);">
@@ -4574,15 +5412,51 @@ async function reactivateStudent(mobile) {
 // =============================================================
 // DELETE STUDENT PERMANENTLY
 // =============================================================
-async function deleteStudent(mobile, name) {
-  if (!confirm(`⚠️ PERMANENTLY DELETE "${name}"?\n\nThis cannot be undone. All their data will be removed.`)) return;
-  if (!confirm(`Are you absolutely sure you want to delete "${name}"?`)) return;
+// Opens the permanent delete confirmation modal (bilingual)
+function deleteStudent(docId, name) {
+  window._pendingDeleteStudentId   = docId;
+  window._pendingDeleteStudentName = name;
+
+  document.getElementById('perm-delete-student-info').innerHTML = `
+    <div style="font-size:var(--fs-sm); line-height:1.8;">
+      <div style="font-weight:700; font-size:var(--fs-base);
+                  color:var(--text-white); margin-bottom:8px;">
+        👤 ${name}
+      </div>
+      <div style="color:var(--text-muted);">
+        Student ID: <strong style="color:var(--neon-blue);">${docId}</strong>
+      </div>
+      <div style="color:var(--text-dim); font-size:var(--fs-xs); margin-top:4px;">
+        छात्र ID: <strong>${docId}</strong>
+      </div>
+    </div>
+  `;
+  openModal('modal-perm-delete-student');
+}
+
+// Executes the actual Firestore delete after confirmation
+async function executePermDeleteStudent() {
+  const docId = window._pendingDeleteStudentId;
+  const name  = window._pendingDeleteStudentName;
+  if (!docId) return;
+
+  const btn = document.getElementById('perm-delete-confirm-btn');
+  btn.disabled = true;
+  btn.textContent = 'Deleting... / हटाया जा रहा है...';
+
   try {
-    await db.collection('students').doc(mobile).delete();
-    showToast(`${name} deleted permanently.`, 'error');
-    loadAllStudents(); loadAdminStats();
+    await db.collection('students').doc(docId).delete();
+    closeModal('modal-perm-delete-student');
+    window._pendingDeleteStudentId   = null;
+    window._pendingDeleteStudentName = null;
+    showToast(`✅ "${name}" permanently deleted. Roll Number is now free.`, 'success');
+    loadAllStudents();
+    loadAdminStats();
   } catch (err) {
-    showToast('Failed to delete. Try again.', 'error');
+    showToast('Failed to delete. Please try again. / दोबारा कोशिश करें।', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🗑️ Delete Forever / हमेशा के लिए हटाएं';
   }
 }
 
@@ -4592,51 +5466,93 @@ async function deleteStudent(mobile, name) {
 // Auto-approved — student can login immediately
 // =============================================================
 async function handleAddStudentManually() {
-  const name     = document.getElementById('as-name').value.trim();
-  const mobile   = document.getElementById('as-mobile').value.trim();
-  const cls      = document.getElementById('as-class').value;
-  const password = document.getElementById('as-password').value.trim();
+  const session  = document.getElementById('as-session').value.trim();
+  const board    = document.getElementById('as-board').value.trim();
+  const cls      = document.getElementById('as-class').value.trim();
   const roll     = document.getElementById('as-roll').value.trim();
-  const email    = document.getElementById('as-email').value.trim();
+  const name     = document.getElementById('as-name').value.trim();
+  const gender   = document.getElementById('as-gender').value.trim();
+  const dob      = document.getElementById('as-dob').value.trim();
+  const mobile   = document.getElementById('as-mobile').value.trim();
+  const altMobile= document.getElementById('as-alt-mobile').value.trim();
+  const password = document.getElementById('as-password').value.trim();
+  const father   = document.getElementById('as-father').value.trim();
+  const mother   = document.getElementById('as-mother').value.trim();
   const address  = document.getElementById('as-address').value.trim();
   const btn      = document.getElementById('add-student-btn');
 
-  // Validate
-  if (!name || !mobile || !cls || !password) {
+  if (!session || !board || !cls || !roll || !name || !gender || !dob || !mobile || !password || !father || !mother || !address) {
     showAddStudentMsg('Please fill in all required fields.', 'error'); return;
   }
   if (mobile.length !== 10 || isNaN(mobile)) {
     showAddStudentMsg('Please enter a valid 10-digit mobile number.', 'error'); return;
   }
+  if (isNaN(roll) || parseInt(roll) < 1) {
+    showAddStudentMsg('Roll number must be a positive number.', 'error'); return;
+  }
 
   btn.disabled = true;
   btn.textContent = 'Adding...';
 
+  // Get class display name from dropdown
+  const asClassSelect = document.getElementById('as-class');
+  const asClassName = asClassSelect.options[asClassSelect.selectedIndex]?.text || cls;
+  const docId = generateStudentId(session, board, asClassName, roll);
+
   try {
-    // Check duplicate
-    const existing = await db.collection('students').doc(mobile).get();
+    const existing = await db.collection('students').doc(docId).get();
     if (existing.exists) {
-      showAddStudentMsg('A student with this mobile number already exists.', 'error');
+      showAddStudentMsg(`Student ID ${docId} already exists. This Roll No is already registered for ${board} in this session.`, 'error');
       return;
     }
 
-    // Add to Firebase — status is 'approved' directly
-    await db.collection('students').doc(mobile).set({
-      name, mobile, class: cls, password,
-      roll: roll || '', email: email || '', address: address || '',
-      status: 'approved', // Manually added = auto approved
+    // Handle photo
+    let photoData = '';
+    const photoFile = document.getElementById('as-photo').files[0];
+    if (photoFile) {
+      photoData = await new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = e => resolve(e.target.result);
+        reader.readAsDataURL(photoFile);
+      });
+    }
+
+    await db.collection('students').doc(docId).set({
+      session, board, class: cls, roll: parseInt(roll),
+      name, gender, dob, mobile,
+      altMobile: altMobile || '',
+      password, father, mother, address,
+      photo: photoData || '',
+      status: 'approved',
+      studentId: docId,
       addedByAdmin: true,
       createdAt: firebase.firestore.FieldValue.serverTimestamp()
     });
 
     showAddStudentMsg(
-      `✅ Student "${name}" added successfully!\nMobile: ${mobile} | Password: ${password}`,
+      `✅ Student "${name}" added!\nID: ${docId} | Board: ${board} | Session: ${session} | Class: ${cls} | Roll: ${roll}`,
       'success'
     );
 
-    // Clear form
-    ['as-name','as-mobile','as-class','as-password','as-roll','as-email','as-address']
+    // Reset form fields
+    ['as-session','as-roll','as-name','as-gender','as-dob',
+     'as-mobile','as-alt-mobile','as-password','as-father','as-mother','as-address']
       .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+
+    // Reset board + class
+    const boardEl = document.getElementById('as-board');
+    if (boardEl) boardEl.value = '';
+    const classEl = document.getElementById('as-class');
+    if (classEl) {
+      classEl.innerHTML = '<option value="">-- Select Board first --</option>';
+      classEl.disabled = true;
+    }
+
+    // Reset photo preview
+    const preview = document.getElementById('as-photo-preview');
+    if (preview) preview.innerHTML = '👤';
+    const photoInput = document.getElementById('as-photo');
+    if (photoInput) photoInput.value = '';
 
     loadAdminStats();
 
@@ -4649,6 +5565,85 @@ async function handleAddStudentManually() {
   }
 }
 
+
+// =============================================================
+// LOAD CLASSES filtered by board into a specific dropdown
+// board: 'BSEB' | 'CBSE'
+// Existing classes without a board field default to BSEB
+// =============================================================
+async function loadClassesForBoard(board, selectId) {
+  const select = document.getElementById(selectId);
+  if (!select) return;
+  select.innerHTML = '<option value="">-- Loading... --</option>';
+  select.disabled = true;
+  try {
+    const snap = await db.collection('classes').orderBy('order').get();
+    const filtered = snap.docs.filter(doc => {
+      const b = doc.data().board;
+      return (b === board) || (!b && board === 'BSEB');
+    });
+    if (filtered.length === 0) {
+      select.innerHTML = '<option value="">-- No classes for this board --</option>';
+    } else {
+      select.innerHTML = '<option value="">-- Select Class --</option>';
+      filtered.forEach(doc => {
+        const c = doc.data();
+        select.innerHTML += `<option value="${doc.id}">${c.name}</option>`;
+      });
+      select.disabled = false;
+    }
+  } catch {
+    select.innerHTML = '<option value="">-- Error loading classes --</option>';
+  }
+}
+
+// When board changes in registration form
+function onRegBoardChange() {
+  const board = document.getElementById('reg-board').value;
+  const classSelect = document.getElementById('reg-class');
+  if (!board) {
+    classSelect.innerHTML = '<option value="">-- Select Board first --</option>';
+    classSelect.disabled = true;
+    return;
+  }
+  loadClassesForBoard(board, 'reg-class');
+}
+
+// When board changes in login form
+function onLoginBoardChange() {
+  const board = document.getElementById('login-board').value;
+  const classSelect = document.getElementById('login-class');
+  if (!board) {
+    classSelect.innerHTML = '<option value="">-- Select Board first --</option>';
+    classSelect.disabled = true;
+    return;
+  }
+  loadClassesForBoard(board, 'login-class');
+}
+
+// When board changes in Admin Add Student form
+function onAsBoardChange() {
+  const board = document.getElementById('as-board').value;
+  const classSelect = document.getElementById('as-class');
+  if (!board) {
+    classSelect.innerHTML = '<option value="">-- Select Board first --</option>';
+    classSelect.disabled = true;
+    return;
+  }
+  loadClassesForBoard(board, 'as-class');
+}
+
+// Photo preview for Admin Add Student form
+function previewAsPhoto(input) {
+  if (input.files && input.files[0]) {
+    const reader = new FileReader();
+    reader.onload = e => {
+      const preview = document.getElementById('as-photo-preview');
+      preview.innerHTML = `<img src="${e.target.result}" style="width:64px;height:64px;border-radius:50%;object-fit:cover;">`;
+    };
+    reader.readAsDataURL(input.files[0]);
+  }
+}
 
 // =============================================================
 // SHOW ADD STUDENT MESSAGE
@@ -4671,28 +5666,68 @@ function showAddStudentMsg(msg, type) {
 // =============================================================
 // MANAGE CLASSES — Load all classes
 // =============================================================
+// =============================================================
+// BOARD TAB STATE for Manage Classes page
+// =============================================================
+let AdminClassTab = 'BSEB';
+
+function switchClassTab(board) {
+  AdminClassTab = board;
+  const bsebBtn = document.getElementById('tab-bseb');
+  const cbseBtn = document.getElementById('tab-cbse');
+  if (bsebBtn) {
+    bsebBtn.style.borderBottomColor = board === 'BSEB' ? 'var(--neon-blue)' : 'transparent';
+    bsebBtn.style.color = board === 'BSEB' ? 'var(--neon-blue)' : 'var(--text-muted)';
+  }
+  if (cbseBtn) {
+    cbseBtn.style.borderBottomColor = board === 'CBSE' ? 'var(--neon-blue)' : 'transparent';
+    cbseBtn.style.color = board === 'CBSE' ? 'var(--neon-blue)' : 'var(--text-muted)';
+  }
+  loadAdminClasses();
+}
+
+function openAddClassModal() {
+  // Pre-select current tab's board
+  const boardSel = document.getElementById('new-class-board');
+  if (boardSel) boardSel.value = AdminClassTab;
+  openModal('modal-add-class');
+}
+
 async function loadAdminClasses() {
   const grid = document.getElementById('a-classes-grid');
   if (!grid) return;
   grid.innerHTML = '<div class="loading-screen" style="grid-column:1/-1;"><div class="spinner"></div></div>';
-
   try {
     const snap = await db.collection('classes').orderBy('order').get();
-
     if (snap.empty) {
-      // First time: seed default classes into Firebase
       await seedDefaultClasses();
       loadAdminClasses();
       return;
     }
-
-    grid.innerHTML = snap.docs.map(doc => {
+    // Filter to current tab; classes without board field = legacy BSEB
+    const filtered = snap.docs.filter(doc => {
+      const b = doc.data().board;
+      return (b === AdminClassTab) || (!b && AdminClassTab === 'BSEB');
+    });
+    if (filtered.length === 0) {
+      grid.innerHTML = `
+        <div class="empty-state" style="grid-column:1/-1;">
+          <div class="empty-state-icon">🎓</div>
+          <h3>No ${AdminClassTab} Classes Yet</h3>
+          <p>Click "Add New Class" to add a ${AdminClassTab} class.</p>
+        </div>`;
+      return;
+    }
+    grid.innerHTML = filtered.map(doc => {
       const c = doc.data();
+      const boardBadge = (c.board || 'BSEB') === 'CBSE'
+        ? '<span class="badge badge-green" style="font-size:10px;margin-bottom:10px;display:inline-block;">📗 CBSE</span>'
+        : '<span class="badge badge-blue" style="font-size:10px;margin-bottom:10px;display:inline-block;">📘 BSEB</span>';
       return `
         <div class="card" style="text-align:center; padding:20px;">
-          <div style="font-size:36px; margin-bottom:10px;">🎓</div>
-          <div style="font-weight:700; font-size:var(--fs-lg);
-                      margin-bottom:16px;">${c.name}</div>
+          <div style="font-size:36px; margin-bottom:8px;">🎓</div>
+          <div style="font-weight:700; font-size:var(--fs-lg); margin-bottom:6px;">${c.name}</div>
+          ${boardBadge}
           <div style="display:flex; gap:8px; justify-content:center; flex-wrap:wrap;">
             <button class="btn btn-ghost btn-sm"
                     onclick="openRenameClassModal('${doc.id}','${c.name.replace(/'/g,"\\'")}')">
@@ -4705,7 +5740,6 @@ async function loadAdminClasses() {
           </div>
         </div>`;
     }).join('');
-
   } catch (err) {
     grid.innerHTML = '<div class="info-box">Could not load classes.</div>';
   }
@@ -4713,46 +5747,48 @@ async function loadAdminClasses() {
 
 
 // =============================================================
-// SEED DEFAULT CLASSES into Firebase on first run
+// SEED DEFAULT CLASSES (all BSEB)
 // =============================================================
 async function seedDefaultClasses() {
   const batch = db.batch();
   const defaults = [
-    { id:'class-6',  name:'Class 6',  order:1 },
-    { id:'class-7',  name:'Class 7',  order:2 },
-    { id:'class-8',  name:'Class 8',  order:3 },
-    { id:'class-9',  name:'Class 9',  order:4 },
-    { id:'class-10', name:'Class 10', order:5 },
+    { id:'class-6',  name:'Class 6',  order:1, board:'BSEB' },
+    { id:'class-7',  name:'Class 7',  order:2, board:'BSEB' },
+    { id:'class-8',  name:'Class 8',  order:3, board:'BSEB' },
+    { id:'class-9',  name:'Class 9',  order:4, board:'BSEB' },
+    { id:'class-10', name:'Class 10', order:5, board:'BSEB' },
   ];
   defaults.forEach(cls => {
     batch.set(db.collection('classes').doc(cls.id), {
-      name: cls.name, order: cls.order,
+      name: cls.name, order: cls.order, board: cls.board,
       createdAt: firebase.firestore.FieldValue.serverTimestamp()
     });
   });
   await batch.commit();
-  showToast('Default classes created!', 'success');
+  showToast('Default BSEB classes created!', 'success');
 }
 
 
 // =============================================================
-// ADD NEW CLASS
+// ADD NEW CLASS (board-aware)
 // =============================================================
 async function handleAddClass() {
+  const board = document.getElementById('new-class-board').value;
   const name  = document.getElementById('new-class-name').value.trim();
   const order = parseInt(document.getElementById('new-class-order').value) || 10;
-  if (!name) { showToast('Please enter a class name.', 'error'); return; }
-
+  if (!board) { showToast('Please select a board.', 'error'); return; }
+  if (!name)  { showToast('Please enter a class name.', 'error'); return; }
   try {
-    const id = 'class-' + name.toLowerCase().replace(/\s+/g, '-') + '-' + Date.now();
+    const id = 'class-' + board.toLowerCase() + '-' + name.toLowerCase().replace(/\s+/g,'-') + '-' + Date.now();
     await db.collection('classes').doc(id).set({
-      name, order,
+      name, order, board,
       createdAt: firebase.firestore.FieldValue.serverTimestamp()
     });
-    showToast(`Class "${name}" added! ✅`, 'success');
+    showToast(`${board} Class "${name}" added! ✅`, 'success');
     closeModal('modal-add-class');
     document.getElementById('new-class-name').value = '';
-    loadAdminClasses();
+    AdminClassTab = board;
+    switchClassTab(board);
     loadClassesIntoAdminDropdowns();
   } catch (err) {
     showToast('Failed to add class. Try again.', 'error');
@@ -4842,20 +5878,43 @@ async function confirmDeleteClass(classId, className) {
 async function loadClassesIntoAdminDropdowns() {
   try {
     const snap = await db.collection('classes').orderBy('order').get();
-    const options = snap.empty
-      ? INSTITUTE_CONFIG.classes.map(c => `<option value="${c}">${c}</option>`).join('')
-      : snap.docs.map(d => `<option value="${d.id}">${d.data().name}</option>`).join('');
+    const bsebOpts = snap.docs
+      .filter(d => !d.data().board || d.data().board === 'BSEB')
+      .map(d => `<option value="${d.id}">[BSEB] ${d.data().name}</option>`).join('');
+    const cbseOpts = snap.docs
+      .filter(d => d.data().board === 'CBSE')
+      .map(d => `<option value="${d.id}">[CBSE] ${d.data().name}</option>`).join('');
 
-    // Update all dropdowns that need class list
-    ['as-class', 'reg-class'].forEach(id => {
-      const el = document.getElementById(id);
-      if (el) {
-        el.innerHTML = `<option value="">-- Select Class --</option>${options}`;
+    // as-class: reset (loaded on-demand when board chosen)
+    const asClass = document.getElementById('as-class');
+    if (asClass && !document.getElementById('as-board')?.value) {
+      asClass.innerHTML = '<option value="">-- Select Board first --</option>';
+      asClass.disabled = true;
+    }
+    // Refresh board-filtered dropdowns if board already selected
+    const asBoard = document.getElementById('as-board')?.value;
+    if (asBoard) loadClassesForBoard(asBoard, 'as-class');
+    const regBoard = document.getElementById('reg-board')?.value;
+    if (regBoard) loadClassesForBoard(regBoard, 'reg-class');
+    const loginBoard = document.getElementById('login-board')?.value;
+    if (loginBoard) loadClassesForBoard(loginBoard, 'login-class');
+  } catch { /* silent */ }
+
+  // Also load sessions into admin add-student form
+  try {
+    const snap = await db.collection('sessions').orderBy('createdAt','desc').get();
+    const el = document.getElementById('as-session');
+    if (el) {
+      el.innerHTML = '<option value="">-- Select Session --</option>';
+      if (snap.empty) {
+        el.innerHTML += '<option value="2026-27">2026-27</option>';
+      } else {
+        snap.forEach(doc => {
+          el.innerHTML += `<option value="${doc.id}"${doc.data().isActive?' selected':''}>${doc.id}</option>`;
+        });
       }
-    });
-  } catch {
-    // Silently fallback
-  }
+    }
+  } catch {}
 }
 
 
@@ -4887,30 +5946,59 @@ async function loadAdminNotices() {
       urgent:    '<span class="badge badge-red">🚨 Urgent</span>'
     };
 
+    // Store notices in memory so emojis aren't corrupted via HTML attributes
+    window._adminNotices = {};
+    snap.docs.forEach(doc => {
+      const n = doc.data();
+      window._adminNotices[doc.id] = {
+        title:   n.title   || '',
+        message: n.message || '',
+        date:    formatDate(n.createdAt)
+      };
+    });
+
     container.innerHTML = snap.docs.map(doc => {
       const n = doc.data();
+      const isPublic = n.isPublic !== false;
       return `
         <div class="notice-item ${n.importance || 'normal'}"
-             style="margin-bottom:14px;">
+             style="margin-bottom:14px; opacity:${isPublic ? '1' : '0.65'};">
           <div style="display:flex; justify-content:space-between;
                       align-items:flex-start; gap:12px; flex-wrap:wrap;">
-            <div class="notice-title">${n.title}</div>
-            <div style="display:flex; gap:8px;">
+            <div>
+              <div class="notice-title">${n.title}</div>
+              <div style="margin-top:4px;">
+                ${isPublic
+                  ? '<span class=\"badge badge-green\" style=\"font-size:10px;\">🌐 Public</span>'
+                  : '<span class=\"badge badge-gray\" style=\"font-size:10px;\">🔒 Private</span>'}
+              </div>
+            </div>
+            <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+              <button class="btn btn-sm ${isPublic ? 'btn-warning' : 'btn-success'}"
+                      onclick="toggleNoticeVisibility('${doc.id}', ${isPublic})">
+                ${isPublic ? '🔒 Make Private' : '🌐 Make Public'}
+              </button>
+              <button class="btn btn-ghost btn-sm"
+                      onclick="shareNoticeWhatsApp(this)"
+                      data-id="${doc.id}"
+                      style="color:#25D366; border-color:#25D366;">
+                📤 WhatsApp
+              </button>
               <button class="btn btn-ghost btn-sm"
                       onclick="openEditNoticeModal('${doc.id}',
-                        '${n.title.replace(/'/g,"\\'")}',
-                        '${n.message.replace(/'/g,"\\'").replace(/\n/g,'\\n')}',
-                        '${n.importance||'normal'}')">
+                        '${n.title.replace(/'/g, "\\'")}',
+                        '${n.message.replace(/'/g, "\\'").replace(/\n/g, '\\n')}',
+                        '${n.importance || 'normal'}')">
                 ✏️ Edit
               </button>
               <button class="btn btn-danger btn-sm"
                       onclick="deleteNotice('${doc.id}',
-                        '${n.title.replace(/'/g,"\\'")}')">
+                        '${n.title.replace(/'/g, "\\'")}')">
                 🗑️ Delete
               </button>
             </div>
           </div>
-          <div class="notice-body" style="margin-top:8px;white-space:pre-line;">${n.message.replace(/\\n/g, "\n")}</div>
+          <div class="notice-body" style="margin-top:8px;white-space:pre-line;">${n.message}</div>
           <div class="notice-footer" style="margin-top:10px;">
             ${importanceLabel[n.importance || 'normal']}
             <span class="notice-date">📅 ${formatDate(n.createdAt)}</span>
@@ -4923,6 +6011,52 @@ async function loadAdminNotices() {
   }
 }
 
+
+
+// =============================================================
+// TOGGLE NOTICE PUBLIC / PRIVATE
+// =============================================================
+async function toggleNoticeVisibility(noticeId, currentlyPublic) {
+  try {
+    await db.collection('notices').doc(noticeId).update({
+      isPublic: !currentlyPublic
+    });
+    const msg = currentlyPublic ? '🔒 Notice is now Private' : '🌐 Notice is now Public';
+    showToast(msg, currentlyPublic ? 'info' : 'success');
+    loadAdminNotices();
+    loadHomeNotices();
+  } catch (err) {
+    showToast('Failed to update notice visibility.', 'error');
+  }
+}
+
+// =============================================================
+// SHARE NOTICE ON WHATSAPP
+// =============================================================
+function shareNoticeWhatsApp(btn) {
+  const noticeId = btn.getAttribute('data-id');
+  const snap = window._adminNotices && window._adminNotices[noticeId];
+
+  const title   = snap ? snap.title   : '';
+  const message = snap ? snap.message : '';
+  const date    = snap ? snap.date    : '';
+
+  const divider = '- - - - - - - - - - - - - - - - - - - - - -';
+
+  const text = '\uD83D\uDCE2 *BRILLIANT COACHING INSTITUTE (B.C.I)*\n'
+    + divider + '\n\n'
+    + '*' + title + '*\n\n'
+    + message + '\n\n'
+    + divider + '\n'
+    + '\uD83D\uDCC5 ' + date + '\n'
+    + '\uD83C\uDF10 bcibuxar.netlify.app\n\n'
+    + '— *Pradeep Kumar*\n'
+    + '\uD83D\uDCDE 6206437776\n'
+    + '_Director, B.C.I, Buxar_';
+
+  const url = 'https://api.whatsapp.com/send?text=' + encodeURIComponent(text);
+  window.open(url, '_blank');
+}
 
 // =============================================================
 // ADD NEW NOTICE
@@ -4939,6 +6073,7 @@ async function handleAddNotice() {
   try {
     await db.collection('notices').add({
       title, message, importance,
+      isPublic: true,
       createdAt: firebase.firestore.FieldValue.serverTimestamp()
     });
     showToast('Notice posted successfully! 📢', 'success');
@@ -5048,10 +6183,7 @@ async function handleChangeAdminCredentials() {
 
     // Update session
     AppState.currentUser.username = username;
-    sessionStorage.setItem('bci_session', JSON.stringify({
-      user: AppState.currentUser,
-      isAdmin: true
-    }));
+    saveSession({ user: AppState.currentUser, isAdmin: true });
 
     // Clear fields
     ['set-username','set-current-pass','set-new-pass','set-confirm-pass']
@@ -5102,6 +6234,21 @@ function loadAdminMaterialsPage() {
 
 console.log('✅ PART 4: Admin Dashboard loaded');
 
+// Auto-create default session 2026-27 if no sessions exist
+(async function initDefaultSession() {
+  try {
+    const snap = await db.collection('sessions').limit(1).get();
+    if (snap.empty) {
+      await db.collection('sessions').doc('2026-27').set({
+        isActive: true,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      console.log('✅ Default session 2026-27 created');
+      loadActiveSessionIntoDropdowns();
+    }
+  } catch(e) { /* silent */ }
+})();
+
 // =====================================================
 // PART 5 — FOLDER SYSTEM, FILE MANAGER,
 //           LOCK/UNLOCK & AUTO-UNLOCK TIMERS
@@ -5131,42 +6278,71 @@ console.log('✅ PART 4: Admin Dashboard loaded');
 // Tracks which class and folder admin is browsing
 // =============================================================
 let AdminFolderState = {
-  currentClassId:   null,  // which class is selected
-  currentClassName: null,  // display name of selected class
-  currentFolderId:  null,  // null = root level of class
-  breadcrumbs:      [],    // [{id, name}, ...] trail
+  currentBoard:     null,  // 'BSEB' or 'CBSE'
+  currentClassId:   null,
+  currentClassName: null,
+  currentFolderId:  null,
+  breadcrumbs:      [],
 };
 
 
 // =============================================================
-// BUILD ADMIN MATERIALS PAGE
-// Entry point — shows class selector first
-// Called by loadAdminMaterialsPage() in Part 4
+// BUILD ADMIN MATERIALS PAGE — shows board selector first
 // =============================================================
 function buildAdminMaterialsPage() {
   const container = document.getElementById('a-materials-content');
   if (!container) return;
 
-  // Reset state
   AdminFolderState = {
-    currentClassId: null, currentClassName: null,
+    currentBoard: null, currentClassId: null, currentClassName: null,
     currentFolderId: null, breadcrumbs: []
   };
 
   container.innerHTML = `
 
-    <!-- ── CLASS SELECTOR ── -->
-    <div id="admin-class-selector">
-      <p style="color:var(--text-muted); margin-bottom:20px; font-size:var(--fs-sm);">
+    <!-- ── BOARD SELECTOR ── -->
+    <div id="admin-board-selector" style="margin-bottom:24px;">
+      <p style="color:var(--text-muted); margin-bottom:16px; font-size:var(--fs-sm);">
+        Select a board first, then choose a class to manage its folders and materials:
+      </p>
+      <div style="display:flex; gap:14px; flex-wrap:wrap;">
+        <div onclick="selectBoardForMaterials('BSEB')" style="
+          padding:20px 36px; border-radius:var(--radius); cursor:pointer;
+          border:2px solid var(--neon-blue); background:rgba(0,212,255,0.06);
+          text-align:center; transition:all 0.2s; min-width:160px;"
+          onmouseenter="this.style.background='rgba(0,212,255,0.14)'"
+          onmouseleave="this.style.background='rgba(0,212,255,0.06)'">
+          <div style="font-size:32px; margin-bottom:6px;">📘</div>
+          <div style="font-family:'Rajdhani',sans-serif; font-weight:700;
+                      font-size:var(--fs-lg); color:var(--neon-blue);">BSEB</div>
+          <div style="font-size:var(--fs-xs); color:var(--text-muted); margin-top:2px;">Bihar Board</div>
+        </div>
+        <div onclick="selectBoardForMaterials('CBSE')" style="
+          padding:20px 36px; border-radius:var(--radius); cursor:pointer;
+          border:2px solid var(--success); background:rgba(0,255,136,0.04);
+          text-align:center; transition:all 0.2s; min-width:160px;"
+          onmouseenter="this.style.background='rgba(0,255,136,0.12)'"
+          onmouseleave="this.style.background='rgba(0,255,136,0.04)'">
+          <div style="font-size:32px; margin-bottom:6px;">📗</div>
+          <div style="font-family:'Rajdhani',sans-serif; font-weight:700;
+                      font-size:var(--fs-lg); color:var(--success);">CBSE</div>
+          <div style="font-size:var(--fs-xs); color:var(--text-muted); margin-top:2px;">Central Board</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── CLASS SELECTOR (shown after board selected) ── -->
+    <div id="admin-class-selector" style="display:none;">
+      <div style="display:flex; align-items:center; gap:12px; margin-bottom:16px; flex-wrap:wrap;">
+        <button class="btn btn-ghost btn-sm" onclick="backToBoardSelector()">← All Boards</button>
+        <span id="admin-board-label" style="font-weight:700; color:var(--neon-blue); font-size:var(--fs-base);"></span>
+      </div>
+      <p style="color:var(--text-muted); margin-bottom:16px; font-size:var(--fs-sm);">
         Select a class to manage its folders and materials:
       </p>
       <div id="admin-class-cards"
-           style="display:grid;
-                  grid-template-columns:repeat(auto-fill,minmax(180px,1fr));
-                  gap:14px;">
-        <div class="loading-screen" style="grid-column:1/-1;">
-          <div class="spinner"></div>
-        </div>
+           style="display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:14px;">
+        <div class="loading-screen" style="grid-column:1/-1;"><div class="spinner"></div></div>
       </div>
     </div>
 
@@ -5386,52 +6562,65 @@ function buildAdminMaterialsPage() {
     </div>
 
   `; // end container innerHTML
-
-  // Load classes for the selector
-  loadClassCardsForAdmin();
+  // Board selector is shown — user clicks BSEB or CBSE to load classes
 }
 
 
 // =============================================================
-// LOAD CLASS CARDS (admin selects which class to manage)
+// MATERIALS PAGE: SELECT BOARD
 // =============================================================
-async function loadClassCardsForAdmin() {
+function selectBoardForMaterials(board) {
+  AdminFolderState.currentBoard = board;
+  document.getElementById('admin-board-selector').style.display = 'none';
+  document.getElementById('admin-class-selector').style.display = 'block';
+  const label = document.getElementById('admin-board-label');
+  if (label) label.textContent = board === 'BSEB' ? '📘 BSEB — Bihar Board' : '📗 CBSE';
+  loadClassCardsForAdmin(board);
+}
+
+function backToBoardSelector() {
+  AdminFolderState.currentBoard    = null;
+  AdminFolderState.currentClassId  = null;
+  AdminFolderState.currentFolderId = null;
+  AdminFolderState.breadcrumbs     = [];
+  document.getElementById('admin-board-selector').style.display = 'block';
+  document.getElementById('admin-class-selector').style.display = 'none';
+  document.getElementById('admin-folder-browser').style.display = 'none';
+}
+
+// =============================================================
+// LOAD CLASS CARDS filtered by board
+// =============================================================
+async function loadClassCardsForAdmin(board) {
   const grid = document.getElementById('admin-class-cards');
   if (!grid) return;
-
   try {
     const snap = await db.collection('classes').orderBy('order').get();
-
-    if (snap.empty) {
+    const filtered = snap.docs.filter(doc => {
+      const b = doc.data().board;
+      return (b === board) || (!b && board === 'BSEB');
+    });
+    if (filtered.length === 0) {
       grid.innerHTML = `
         <div class="empty-state" style="grid-column:1/-1;">
           <div class="empty-state-icon">🎓</div>
-          <h3>No Classes Yet</h3>
-          <p>Go to "Manage Classes" to add classes first.</p>
+          <h3>No ${board} Classes Yet</h3>
+          <p>Go to "Manage Classes" to add ${board} classes first.</p>
         </div>`;
       return;
     }
-
-    grid.innerHTML = snap.docs.map(doc => {
+    grid.innerHTML = filtered.map(doc => {
       const c = doc.data();
       return `
-        <div class="card" style="
-          text-align:center; padding:24px; cursor:pointer;
-          transition:all 0.2s;"
+        <div class="card" style="text-align:center; padding:24px; cursor:pointer; transition:all 0.2s;"
           onclick="selectClassForAdmin('${doc.id}','${c.name.replace(/'/g,"\\'")}' )"
-          onmouseenter="this.style.borderColor='var(--neon-blue)';
-                        this.style.transform='translateY(-3px)'"
-          onmouseleave="this.style.borderColor='var(--border)';
-                        this.style.transform='translateY(0)'">
+          onmouseenter="this.style.borderColor='var(--neon-blue)';this.style.transform='translateY(-3px)'"
+          onmouseleave="this.style.borderColor='var(--border)';this.style.transform='translateY(0)'">
           <div style="font-size:40px; margin-bottom:12px;">🎓</div>
-          <div style="font-weight:700; font-size:var(--fs-lg);
-                      margin-bottom:6px;">${c.name}</div>
-          <div class="badge badge-blue" style="margin-top:4px;">
-            Click to Manage →
-          </div>
+          <div style="font-weight:700; font-size:var(--fs-lg); margin-bottom:6px;">${c.name}</div>
+          <div class="badge badge-blue" style="margin-top:4px;">Click to Manage →</div>
         </div>`;
     }).join('');
-
   } catch (err) {
     grid.innerHTML = '<div class="info-box">Could not load classes.</div>';
   }
@@ -5439,7 +6628,7 @@ async function loadClassCardsForAdmin() {
 
 
 // =============================================================
-// SELECT CLASS — switches to folder browser for that class
+// SELECT CLASS — switches to folder browser
 // =============================================================
 function selectClassForAdmin(classId, className) {
   AdminFolderState.currentClassId   = classId;
@@ -5447,23 +6636,21 @@ function selectClassForAdmin(classId, className) {
   AdminFolderState.currentFolderId  = null;
   AdminFolderState.breadcrumbs      = [];
 
-  // Hide class selector, show folder browser
   document.getElementById('admin-class-selector').style.display  = 'none';
   document.getElementById('admin-folder-browser').style.display  = 'block';
 
-  // Load root folders of this class
   updateAdminBreadcrumb();
   loadAdminFolderContents(null);
 }
 
 
 // =============================================================
-// BACK TO CLASS SELECTOR
+// BACK TO CLASS SELECTOR (from folder browser)
 // =============================================================
 function backToClassSelector() {
-  AdminFolderState.currentClassId   = null;
-  AdminFolderState.currentFolderId  = null;
-  AdminFolderState.breadcrumbs      = [];
+  AdminFolderState.currentClassId  = null;
+  AdminFolderState.currentFolderId = null;
+  AdminFolderState.breadcrumbs     = [];
 
   document.getElementById('admin-class-selector').style.display = 'block';
   document.getElementById('admin-folder-browser').style.display = 'none';
@@ -5560,48 +6747,18 @@ async function loadAdminFolderContents(parentFolderId) {
             <div class="folder-name">${f.name}</div>
             <div class="folder-meta">Double-click to open</div>
 
-            <!-- Action buttons (appear on hover) -->
-            <div class="folder-actions" style="display:flex;">
-              <!-- Enter folder -->
-              <button class="btn btn-ghost btn-sm btn-icon"
-                      title="Open folder"
-                      onclick="event.stopPropagation();
-                               adminEnterFolder('${doc.id}',
-                               '${f.name.replace(/'/g,"\\'")}')">
-                📂
-              </button>
-              <!-- Lock / Unlock -->
-              <button class="btn btn-sm btn-icon ${isLocked
-                  ? 'btn-success' : 'btn-warning'}"
-                      title="${isLocked ? 'Unlock folder' : 'Lock folder'}"
-                      onclick="event.stopPropagation();
-                               toggleFolderLock('${doc.id}', ${isLocked})">
-                ${isLocked ? '🔓' : '🔒'}
-              </button>
-              <!-- Timer -->
-              <button class="btn btn-ghost btn-sm btn-icon"
-                      title="Set auto-unlock timer"
-                      onclick="event.stopPropagation();
-                               openSetTimerModal('${doc.id}','folder',
-                               '${countdown || ''}')">
-                ⏰
-              </button>
-              <!-- Rename -->
-              <button class="btn btn-ghost btn-sm btn-icon"
-                      title="Rename folder"
-                      onclick="event.stopPropagation();
-                               openRenameFolderModal('${doc.id}',
-                               '${f.name.replace(/'/g,"\\'")}')">
-                ✏️
-              </button>
-              <!-- Delete -->
-              <button class="btn btn-danger btn-sm btn-icon"
-                      title="Delete folder"
-                      onclick="event.stopPropagation();
-                               confirmDeleteFolder('${doc.id}',
-                               '${f.name.replace(/'/g,"\\'")}')">
-                🗑️
-              </button>
+            <!-- 3-dot menu -->
+            <div style="position:absolute;top:8px;right:8px;">
+              <button class="btn btn-ghost btn-sm folder-menu-btn"
+                      onclick="event.stopPropagation();toggleFolderMenu('fmenu-${doc.id}',this)"
+                      style="font-size:20px;font-weight:900;padding:0 6px;line-height:1;border:none;">⋮</button>
+              <div id="fmenu-${doc.id}" class="folder-dropdown-menu" style="display:none;">
+                <div class="fdm-item" onclick="event.stopPropagation();closeFolderMenus();adminEnterFolder('${doc.id}','${f.name.replace(/'/g,"\\'")}')">📂 Open</div>
+                <div class="fdm-item" onclick="event.stopPropagation();closeFolderMenus();toggleFolderLock('${doc.id}',${isLocked})">${isLocked ? '🔓 Unlock' : '🔒 Lock'}</div>
+                <div class="fdm-item" onclick="event.stopPropagation();closeFolderMenus();openSetTimerModal('${doc.id}','folder','${countdown||''}')">⏰ Set Timer${countdown ? ' ✓':''}</div>
+                <div class="fdm-item" onclick="event.stopPropagation();closeFolderMenus();openRenameFolderModal('${doc.id}','${f.name.replace(/'/g,"\\'")}')">✏️ Rename</div>
+                <div class="fdm-item fdm-danger" onclick="event.stopPropagation();closeFolderMenus();confirmDeleteFolder('${doc.id}','${f.name.replace(/'/g,"\\'")}')">🗑️ Delete</div>
+              </div>
             </div>
           </div>`;
       });
@@ -5863,6 +7020,32 @@ async function deletefolderRecursive(folderId) {
 // =============================================================
 // TOGGLE FOLDER LOCK (lock/unlock with one click)
 // =============================================================
+// =============================================================
+// FOLDER 3-DOT MENU TOGGLE
+// =============================================================
+function toggleFolderMenu(menuId, btn) {
+  // Close all other open menus first
+  document.querySelectorAll('.folder-dropdown-menu').forEach(m => {
+    if (m.id !== menuId) m.style.display = 'none';
+  });
+  const menu = document.getElementById(menuId);
+  if (!menu) return;
+  const isOpen = menu.style.display !== 'none';
+  menu.style.display = isOpen ? 'none' : 'block';
+  // Close on outside click
+  if (!isOpen) {
+    setTimeout(() => {
+      document.addEventListener('click', closeFolderMenus, { once: true });
+    }, 10);
+  }
+}
+
+function closeFolderMenus() {
+  document.querySelectorAll('.folder-dropdown-menu').forEach(m => {
+    m.style.display = 'none';
+  });
+}
+
 async function toggleFolderLock(folderId, currentlyLocked) {
   try {
     const newState = !currentlyLocked;
@@ -6133,6 +7316,85 @@ console.log('📋 Next step: Add your Firebase config keys (Part 1)');
 console.log('🌐 Then deploy to Netlify for free hosting');
 
 </script>
+
+<!-- =====================================================
+     GLOBAL MODALS — at root level, work on ALL pages
+     (registration, login, admin, student dashboard)
+     ===================================================== -->
+
+<!-- Modal: Registration Confirmation -->
+<div class="modal-overlay" id="modal-reg-confirm">
+  <div class="modal" style="max-width:520px;">
+    <div class="modal-header">
+      <div class="modal-title">📋 Confirm Your Details / अपनी जानकारी जाँचें</div>
+      <button class="modal-close" onclick="closeModal('modal-reg-confirm')">✕</button>
+    </div>
+    <div style="background:rgba(0,212,255,0.06); border:1px solid rgba(0,212,255,0.2);
+                border-radius:var(--radius); padding:14px; margin-bottom:16px;
+                font-size:var(--fs-sm); color:var(--text-muted); line-height:1.7;">
+      ⚠️ <strong style="color:var(--text-white);">Please check your details carefully before submitting.</strong><br>
+      <span style="color:var(--text-dim);">जमा करने से पहले अपनी जानकारी ध्यान से जाँच लें।</span><br><br>
+      <span style="color:var(--danger); font-size:var(--fs-xs);">
+        Once submitted, you cannot change your details.<br>
+        एक बार जमा करने के बाद जानकारी बदली नहीं जा सकती।
+      </span>
+    </div>
+    <div id="reg-confirm-details"
+         style="display:grid; grid-template-columns:1fr 1fr; gap:8px;
+                margin-bottom:20px; font-size:var(--fs-sm);">
+    </div>
+    <div class="modal-footer" style="gap:12px;">
+      <button class="btn btn-ghost" style="flex:1;"
+              onclick="closeModal('modal-reg-confirm')">
+        ✏️ Edit / वापस जाएं
+      </button>
+      <button class="btn btn-primary" style="flex:1;"
+              id="reg-confirm-submit-btn"
+              onclick="submitRegistrationConfirmed()">
+        ✅ Submit / जमा करें
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Admin Permanent Delete Student -->
+<div class="modal-overlay" id="modal-perm-delete-student">
+  <div class="modal" style="max-width:480px;">
+    <div class="modal-header">
+      <div class="modal-title" style="color:var(--danger);">
+        🗑️ Permanently Delete / स्थायी रूप से हटाएं
+      </div>
+      <button class="modal-close" onclick="closeModal('modal-perm-delete-student')">✕</button>
+    </div>
+    <div id="perm-delete-student-info"
+         style="background:rgba(255,59,59,0.08); border:1px solid rgba(255,59,59,0.3);
+                border-radius:var(--radius); padding:14px; margin-bottom:16px;">
+    </div>
+    <div style="font-size:var(--fs-sm); color:var(--text-muted); line-height:1.8;
+                margin-bottom:20px;">
+      <div style="color:var(--danger); font-weight:600; margin-bottom:6px;">
+        ⚠️ This action CANNOT be undone. / यह क्रिया वापस नहीं होगी।
+      </div>
+      The student's Roll Number will be <strong style="color:var(--success);">freed</strong>
+      and can be used for re-registration.<br>
+      <span style="color:var(--text-dim);">
+        छात्र का रोल नंबर <strong>मुक्त</strong> हो जाएगा
+        और दोबारा पंजीकरण के लिए उपलब्ध होगा।
+      </span>
+    </div>
+    <div class="modal-footer" style="gap:12px;">
+      <button class="btn btn-ghost" style="flex:1;"
+              onclick="closeModal('modal-perm-delete-student')">
+        Cancel / रद्द करें
+      </button>
+      <button class="btn btn-danger" style="flex:1;"
+              id="perm-delete-confirm-btn"
+              onclick="executePermDeleteStudent()">
+        🗑️ Delete Forever / हमेशा के लिए हटाएं
+      </button>
+    </div>
+  </div>
+</div>
 
 </body>
 </html>
