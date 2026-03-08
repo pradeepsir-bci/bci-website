@@ -1541,6 +1541,19 @@ function showPage(pageId, addHistory = true) {
 function openModal(id) { document.getElementById(id)?.classList.add('open'); }
 function closeModal(id) { document.getElementById(id)?.classList.remove('open'); }
 
+// toggleSection — used by collapsible sections inside the Edit Institute modal
+// Toggles the visibility of a section div and rotates its arrow indicator.
+// `sectionId` — the id of the collapsible <div>
+// `headerEl`  — the clicked header element (contains the arrow span as last child)
+function toggleSection(sectionId, headerEl) {
+  const section = document.getElementById(sectionId);
+  const arrow   = document.getElementById(sectionId + '-arrow');
+  if (!section) return;
+  const isOpen = section.style.display !== 'none';
+  section.style.display = isOpen ? 'none' : 'block';
+  if (arrow) arrow.style.transform = isOpen ? 'rotate(0deg)' : 'rotate(180deg)';
+}
+
 // =============================================================
 // BROWSER BACK BUTTON — History API (SPA navigation)
 // =============================================================
@@ -1573,6 +1586,7 @@ window.addEventListener('popstate', (e) => {
     if (page === 'a-page-classes') loadClasses();
     if (page === 'a-page-notices') loadAdminNotices();
     if (page === 'a-page-sessions') loadSessions();
+    if (page === 'a-page-homepage') loadHomepageEditor();
   } else if (area === 'public') {
     showPage(page, false);
   }
@@ -2107,7 +2121,8 @@ function buildPageHTML() {
                   animation: fadeInUp 0.6s ease both;"
            alt="BCI Logo" onerror="this.style.display='none'">
 
-      <!-- Badge -->
+      <!-- Badge — id="hp-badge-prefix" updated by applyInstituteDataEverywhere(),
+           hp-hero-city is appended automatically from the city field -->
       <div style="
         display:inline-flex; align-items:center; gap:6px;
         background: rgba(0,212,255,0.08);
@@ -2117,7 +2132,7 @@ function buildPageHTML() {
         letter-spacing: 1.5px; text-transform: uppercase; font-weight: 600;
         margin-bottom: 24px;
         animation: fadeInUp 0.6s ease 0.1s both;
-      ">🎓 Secure Learning Platform — <span id="hp-hero-city">Buxar, Bihar</span></div>
+      ">🎓 <span id="hp-badge-prefix">Secure Learning Platform</span> — <span id="hp-hero-city">Buxar, Bihar</span></div>
 
       <!-- Main heading -->
       <h1 style="
@@ -2137,15 +2152,15 @@ function buildPageHTML() {
         <span style="color:var(--text-white);">Institute</span>
       </h1>
 
-      <!-- Tagline -->
-      <p style="
+      <!-- Tagline — IDs used by applyInstituteDataEverywhere() to update text dynamically -->
+      <p id="hp-slogan-hindi" style="
         font-size: var(--fs-lg);
         color: var(--text-muted);
         margin-bottom: 8px;
         animation: fadeInUp 0.6s ease 0.3s both;
         font-weight: 500;
       ">आपका भविष्य, हमारी ज़िम्मेदारी</p>
-      <p style="
+      <p id="hp-slogan-en" style="
         font-size: var(--fs-base);
         color: var(--text-dim);
         margin-bottom: 40px;
@@ -2166,26 +2181,43 @@ function buildPageHTML() {
         </button>
       </div>
 
-      <!-- Feature cards -->
+      <!-- Feature cards — Each card element has an ID so admin can customise icon/title/desc.
+           IDs follow pattern: hp-card-N-icon, hp-card-N-title, hp-card-N-desc  (N = 1..4)
+           These are updated by applyInstituteDataEverywhere() on every page load. -->
       <div style="
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
         gap: 16px; max-width: 900px; width: 100%;
         animation: fadeInUp 0.6s ease 0.5s both;
       ">
-        ${[
-          { icon:'📚', title:'Study Materials', desc:'Notes, assignments, DPPs and previous year papers — all organised by subject and chapter.' },
-          { icon:'🎯', title:'Bihar & CBSE Board', desc:'Expert preparation for Class 6-10 BSEB and Class 9-10 CBSE students of Buxar.' },
-          { icon:'👨‍🏫', title:'Director', desc:'<span id="hp-feature-director">10+ years of teaching experience. Personal guidance for every student at Civil Line, Buxar.</span>' },
-          { icon:'🔒', title:'Secure Portal', desc:'Only admin-approved students can access materials. Your data is safe and private.' },
-        ].map(f => `
-          <div class="card" style="text-align:left; padding:20px;">
-            <div style="font-size:28px; margin-bottom:10px;">${f.icon}</div>
-            <div style="font-family:'Rajdhani',sans-serif; font-weight:700;
-                        font-size:var(--fs-md); margin-bottom:6px;">${f.title}</div>
-            <div style="font-size:var(--fs-sm); color:var(--text-muted); line-height:1.6;">${f.desc}</div>
-          </div>
-        `).join('')}
+        <!-- Card 1 -->
+        <div class="card" style="text-align:left; padding:20px;">
+          <div id="hp-card-1-icon" style="font-size:28px; margin-bottom:10px;">📚</div>
+          <div id="hp-card-1-title" style="font-family:'Rajdhani',sans-serif; font-weight:700;
+                      font-size:var(--fs-md); margin-bottom:6px;">Study Materials</div>
+          <div id="hp-card-1-desc" style="font-size:var(--fs-sm); color:var(--text-muted); line-height:1.6;">Notes, assignments, DPPs and previous year papers — all organised by subject and chapter.</div>
+        </div>
+        <!-- Card 2 -->
+        <div class="card" style="text-align:left; padding:20px;">
+          <div id="hp-card-2-icon" style="font-size:28px; margin-bottom:10px;">🎯</div>
+          <div id="hp-card-2-title" style="font-family:'Rajdhani',sans-serif; font-weight:700;
+                      font-size:var(--fs-md); margin-bottom:6px;">Bihar &amp; CBSE Board</div>
+          <div id="hp-card-2-desc" style="font-size:var(--fs-sm); color:var(--text-muted); line-height:1.6;">Expert preparation for Class 6-10 BSEB and Class 9-10 CBSE students of Buxar.</div>
+        </div>
+        <!-- Card 3 — Director card (desc also contains dynamic director name) -->
+        <div class="card" style="text-align:left; padding:20px;">
+          <div id="hp-card-3-icon" style="font-size:28px; margin-bottom:10px;">👨‍🏫</div>
+          <div id="hp-card-3-title" style="font-family:'Rajdhani',sans-serif; font-weight:700;
+                      font-size:var(--fs-md); margin-bottom:6px;">Director</div>
+          <div id="hp-card-3-desc" style="font-size:var(--fs-sm); color:var(--text-muted); line-height:1.6;"><span id="hp-feature-director">10+ years of teaching experience. Personal guidance for every student at Civil Line, Buxar.</span></div>
+        </div>
+        <!-- Card 4 -->
+        <div class="card" style="text-align:left; padding:20px;">
+          <div id="hp-card-4-icon" style="font-size:28px; margin-bottom:10px;">🔒</div>
+          <div id="hp-card-4-title" style="font-family:'Rajdhani',sans-serif; font-weight:700;
+                      font-size:var(--fs-md); margin-bottom:6px;">Secure Portal</div>
+          <div id="hp-card-4-desc" style="font-size:var(--fs-sm); color:var(--text-muted); line-height:1.6;">Only admin-approved students can access materials. Your data is safe and private.</div>
+        </div>
       </div>
     </section>
 
@@ -2241,9 +2273,11 @@ function buildPageHTML() {
           `).join('')}
         </div>
 
-        <!-- MAPS + REVIEW BUTTONS -->
+        <!-- Social / Map link buttons — hrefs are updated by applyInstituteDataEverywhere()
+             so the admin can change them from the Edit Institute Info modal.
+             IDs: hp-maps-link, hp-review-link, hp-youtube-link -->
         <div style="display:flex; flex-wrap:wrap; gap:16px; justify-content:center; margin-top:40px;">
-          <a href="https://maps.app.goo.gl/pWSuecRDyFpVsxVq5" target="_blank" style="
+          <a id="hp-maps-link" href="https://maps.app.goo.gl/pWSuecRDyFpVsxVq5" target="_blank" style="
             display:inline-flex; align-items:center; gap:10px;
             padding:14px 28px;
             background:linear-gradient(135deg, #00d4ff22, #00d4ff11);
@@ -2260,7 +2294,7 @@ function buildPageHTML() {
              onmouseout="this.style.background='linear-gradient(135deg,#00d4ff22,#00d4ff11)'; this.style.transform='translateY(0)'">
             📍 Find Us on Google Maps
           </a>
-          <a href="https://g.page/r/CVV3GUY-gKWqEBM/review" target="_blank" style="
+          <a id="hp-review-link" href="https://g.page/r/CVV3GUY-gKWqEBM/review" target="_blank" style="
             display:inline-flex; align-items:center; gap:10px;
             padding:14px 28px;
             background:linear-gradient(135deg, #ffd70022, #ffd70011);
@@ -2277,7 +2311,7 @@ function buildPageHTML() {
              onmouseout="this.style.background='linear-gradient(135deg,#ffd70022,#ffd70011)'; this.style.transform='translateY(0)'">
             ⭐ Rate Us on Google
           </a>
-          <a href="https://www.youtube.com/@PradeepsirBCI" target="_blank" style="
+          <a id="hp-youtube-link" href="https://www.youtube.com/@PradeepsirBCI" target="_blank" style="
             display:inline-flex; align-items:center; gap:10px;
             padding:14px 28px;
             background:linear-gradient(135deg, #ff000022, #ff000011);
@@ -4617,6 +4651,10 @@ function buildAdminDashboardHTML() {
              onclick="showAdminPage('a-page-notices'); loadAdminNotices()">
           <span class="nav-icon">📢</span> Notice Board
         </div>
+        <div class="nav-item" data-page="a-page-homepage"
+             onclick="showAdminPage('a-page-homepage'); loadHomepageEditor()">
+          <span class="nav-icon">🌐</span> Home Page
+        </div>
 
         <div class="nav-section-title">System</div>
         <div class="nav-item" data-page="a-page-sessions"
@@ -5173,11 +5211,14 @@ function buildAdminDashboardHTML() {
             </button>
           </div>
 
-          <!-- Institute info display -->
+          <!-- Institute info display card
+               – ✏️ Edit button opens the full Edit Institute Info modal
+               – 🌐 Edit Home Page button is a prominent CTA below the info rows -->
           <div class="card" id="inst-info-card">
             <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;">
               <div class="card-title" style="margin:0;">🏫 Institute <span>Info</span></div>
-              <button class="btn btn-outline btn-sm" onclick="openEditInstituteModal()">✏️ Edit</button>
+              <!-- Small edit button kept in header for quick access -->
+              <button class="btn btn-outline btn-sm" onclick="openEditInstituteModal()" title="Edit all institute info including home page">✏️ Edit</button>
             </div>
 
             <!-- Logo display -->
@@ -5193,13 +5234,20 @@ function buildAdminDashboardHTML() {
               </div>
             </div>
 
-            <!-- Info rows -->
+            <!-- Info rows (director, phone, city, address, classes) -->
             <div id="inst-info-rows"></div>
+
+            <!-- Quick link to dedicated Home Page editor -->
+            <div style="margin-top:16px; padding-top:14px; border-top:1px solid var(--border); text-align:center;">
+              <button class="btn btn-ghost btn-sm" style="font-size:var(--fs-xs); color:var(--text-muted);"
+                      onclick="showAdminPage('a-page-homepage'); loadHomepageEditor()">
+                🌐 Edit Home Page →
+              </button>
+            </div>
           </div>
 
-        </div>
+        </div><!-- end grid-2col -->
 
-        <!-- Session Timeout Settings -->
         <div style="max-width:800px; margin-top:24px;">
           <div class="card">
             <div class="card-title">⏱️ Session Timeout <span>Settings</span></div>
@@ -5258,7 +5306,348 @@ function buildAdminDashboardHTML() {
 
       </div><!-- end a-page-settings -->
 
-    </main>
+      <!-- ============================================================
+           HOME PAGE EDITOR PAGE
+           ID: a-page-homepage
+           A dedicated full-page editor for every visible element on
+           the public home page. Divided into 4 clear sections:
+             1. Hero — badge text, Hindi slogan, English slogan
+             2. Feature Cards — 4 cards × icon + title + desc
+             3. Social & Map Links — Maps, YouTube, Google Review
+             4. Contact Info — director, phone, address, city (mirrors core)
+           All data saved to Firestore admin/institute.
+           Each section has its own Save button. Changes are saved per-section to Firestore.
+           ============================================================ -->
+      <div id="a-page-homepage" class="page">
+
+        <div class="page-header">
+          <h1>🌐 <span>Home Page</span> Editor</h1>
+          <p style="color:var(--text-muted);">
+            Customise every visible element on the public home page.
+            Changes are saved to Firestore and applied instantly.
+          </p>
+        </div>
+
+        <!-- Slim status bar — just shows current edit context, no save button here -->
+        <div id="hp-editor-bar" style="
+          display:flex; align-items:center; justify-content:space-between;
+          gap:10px; flex-wrap:wrap;
+          padding:8px 14px; margin-bottom:24px;
+          background:var(--bg-card); border:1px solid var(--border);
+          border-radius:var(--radius-sm);
+        ">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <div style="width:8px;height:8px;flex-shrink:0;border-radius:50%;background:#00d4ff;
+                        box-shadow:0 0 8px #00d4ff;animation:pulse 2s infinite;"></div>
+            <span style="font-size:var(--fs-xs);color:var(--text-muted);">
+              Editing: <strong style="color:var(--text-white);">Public Home Page</strong>
+            </span>
+            <span style="font-size:10px;color:var(--text-dim);">— Each section has its own Save button</span>
+          </div>
+          <!-- Global status message shown by any section save -->
+          <div id="hp-editor-msg" style="font-size:var(--fs-xs);display:none;flex-shrink:0;"></div>
+        </div>
+
+        <div style="max-width:860px;width:100%;box-sizing:border-box;">
+
+          <!-- ════════════════════════════════════════════════════
+               SECTION 1 — HERO BADGE & SLOGANS
+               ════════════════════════════════════════════════════ -->
+          <div class="card" style="margin-bottom:20px;">
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;padding-bottom:14px;border-bottom:1px solid var(--border);">
+              <div style="font-size:28px;">🎓</div>
+              <div>
+                <div class="card-title" style="margin:0;">Hero <span>Badge &amp; Slogans</span></div>
+                <div style="font-size:var(--fs-xs);color:var(--text-muted);margin-top:2px;">
+                  The glowing badge and two taglines shown below the logo on the home page
+                </div>
+              </div>
+            </div>
+
+            <!-- Live preview strip -->
+            <div style="padding:12px 16px; background:rgba(0,212,255,0.05); border:1px solid rgba(0,212,255,0.15);
+                        border-radius:var(--radius-sm); margin-bottom:20px; text-align:center; overflow:hidden;">
+              <div style="font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Live Preview</div>
+              <div style="display:inline-flex;align-items:center;gap:6px;background:rgba(0,212,255,0.08);border:1px solid rgba(0,212,255,0.25);border-radius:20px;padding:4px 14px;font-size:11px;color:var(--neon-blue);letter-spacing:1px;text-transform:uppercase;font-weight:600;margin-bottom:8px;max-width:100%;flex-wrap:wrap;justify-content:center;word-break:break-word;">
+                🎓 <span id="hpe-preview-badge">Secure Learning Platform</span> — <span id="hpe-preview-city">Buxar, Bihar</span>
+              </div><br>
+              <div id="hpe-preview-hindi" style="font-size:var(--fs-sm);color:var(--text-muted);font-weight:500;word-break:break-word;">आपका भविष्य, हमारी ज़िम्मेदारी</div>
+              <div id="hpe-preview-en" style="font-size:12px;color:var(--text-dim);margin-top:2px;word-break:break-word;">Your Future, Our Responsibility</div>
+            </div>
+
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;">
+              <div class="form-group" style="grid-column:1/-1;">
+                <label>🎓 Badge Text
+                  <span style="font-size:10px;color:var(--text-dim);font-weight:400;margin-left:6px;">City is appended automatically after " — "</span>
+                </label>
+                <input class="form-control" id="hpe-badge" placeholder="Secure Learning Platform"
+                       oninput="document.getElementById('hpe-preview-badge').textContent=this.value||'...'">
+              </div>
+              <div class="form-group">
+                <label>🇮🇳 Hindi Slogan</label>
+                <input class="form-control" id="hpe-slogan-hindi" placeholder="आपका भविष्य, हमारी ज़िम्मेदारी"
+                       oninput="document.getElementById('hpe-preview-hindi').textContent=this.value||'...'">
+              </div>
+              <div class="form-group">
+                <label>🇬🇧 English Slogan</label>
+                <input class="form-control" id="hpe-slogan-en" placeholder="Your Future, Our Responsibility"
+                       oninput="document.getElementById('hpe-preview-en').textContent=this.value||'...'">
+              </div>
+            </div>
+
+            <!-- Section 1 save button -->
+            <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;">
+              <button class="btn btn-primary btn-sm" id="btn-save-hero"
+                      onclick="saveHpSection('hero')" style="min-width:140px;">
+                💾 Save Hero &amp; Slogans
+              </button>
+            </div>
+          </div>
+
+          <!-- ════════════════════════════════════════════════════
+               SECTION 2 — FEATURE CARDS
+               4 cards laid out in a 2×2 grid, each with icon/title/desc
+               ════════════════════════════════════════════════════ -->
+          <div class="card" style="margin-bottom:20px;">
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;padding-bottom:14px;border-bottom:1px solid var(--border);">
+              <div style="font-size:28px;">🃏</div>
+              <div>
+                <div class="card-title" style="margin:0;">Feature <span>Cards</span></div>
+                <div style="font-size:var(--fs-xs);color:var(--text-muted);margin-top:2px;">
+                  The 4 cards shown below the CTA buttons on the home page hero section
+                </div>
+              </div>
+            </div>
+
+            <!-- 2×2 card grid — collapses to 1 column on mobile (<600px) -->
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;">
+              <!-- Card 1 -->
+              <div style="padding:14px;background:var(--bg-card2);border-radius:var(--radius-sm);border:1px solid var(--border);">
+                <div style="font-size:var(--fs-xs);color:var(--neon-blue);font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:12px;">Card 1</div>
+                <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:nowrap;">
+                  <div class="form-group" style="width:60px;flex-shrink:0;margin-bottom:0;">
+                    <label style="font-size:10px;">Icon</label>
+                    <input class="form-control" id="hpe-c1-icon" placeholder="📚"
+                           style="text-align:center;font-size:22px;padding:6px 2px;">
+                  </div>
+                  <div class="form-group" style="flex:1;margin-bottom:0;min-width:0;">
+                    <label style="font-size:10px;">Title</label>
+                    <input class="form-control" id="hpe-c1-title" placeholder="Study Materials">
+                  </div>
+                </div>
+                <div class="form-group" style="margin-bottom:0;">
+                  <label style="font-size:10px;">Description</label>
+                  <textarea class="form-control" id="hpe-c1-desc" rows="3"
+                            placeholder="Notes, assignments, DPPs..."></textarea>
+                </div>
+              </div>
+
+              <!-- Card 2 -->
+              <div style="padding:14px;background:var(--bg-card2);border-radius:var(--radius-sm);border:1px solid var(--border);">
+                <div style="font-size:var(--fs-xs);color:var(--neon-blue);font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:12px;">Card 2</div>
+                <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:nowrap;">
+                  <div class="form-group" style="width:60px;flex-shrink:0;margin-bottom:0;">
+                    <label style="font-size:10px;">Icon</label>
+                    <input class="form-control" id="hpe-c2-icon" placeholder="🎯"
+                           style="text-align:center;font-size:22px;padding:6px 2px;">
+                  </div>
+                  <div class="form-group" style="flex:1;margin-bottom:0;min-width:0;">
+                    <label style="font-size:10px;">Title</label>
+                    <input class="form-control" id="hpe-c2-title" placeholder="Bihar &amp; CBSE Board">
+                  </div>
+                </div>
+                <div class="form-group" style="margin-bottom:0;">
+                  <label style="font-size:10px;">Description</label>
+                  <textarea class="form-control" id="hpe-c2-desc" rows="3"
+                            placeholder="Expert preparation..."></textarea>
+                </div>
+              </div>
+
+              <!-- Card 3 -->
+              <div style="padding:14px;background:var(--bg-card2);border-radius:var(--radius-sm);border:1px solid var(--border);">
+                <div style="font-size:var(--fs-xs);color:var(--neon-blue);font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:12px;">Card 3</div>
+                <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:nowrap;">
+                  <div class="form-group" style="width:60px;flex-shrink:0;margin-bottom:0;">
+                    <label style="font-size:10px;">Icon</label>
+                    <input class="form-control" id="hpe-c3-icon" placeholder="👨‍🏫"
+                           style="text-align:center;font-size:22px;padding:6px 2px;">
+                  </div>
+                  <div class="form-group" style="flex:1;margin-bottom:0;min-width:0;">
+                    <label style="font-size:10px;">Title</label>
+                    <input class="form-control" id="hpe-c3-title" placeholder="Director">
+                  </div>
+                </div>
+                <div class="form-group" style="margin-bottom:0;">
+                  <label style="font-size:10px;">Description</label>
+                  <textarea class="form-control" id="hpe-c3-desc" rows="3"
+                            placeholder="10+ years of teaching..."></textarea>
+                </div>
+              </div>
+
+              <!-- Card 4 -->
+              <div style="padding:14px;background:var(--bg-card2);border-radius:var(--radius-sm);border:1px solid var(--border);">
+                <div style="font-size:var(--fs-xs);color:var(--neon-blue);font-weight:700;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:12px;">Card 4</div>
+                <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:nowrap;">
+                  <div class="form-group" style="width:60px;flex-shrink:0;margin-bottom:0;">
+                    <label style="font-size:10px;">Icon</label>
+                    <input class="form-control" id="hpe-c4-icon" placeholder="🔒"
+                           style="text-align:center;font-size:22px;padding:6px 2px;">
+                  </div>
+                  <div class="form-group" style="flex:1;margin-bottom:0;min-width:0;">
+                    <label style="font-size:10px;">Title</label>
+                    <input class="form-control" id="hpe-c4-title" placeholder="Secure Portal">
+                  </div>
+                </div>
+                <div class="form-group" style="margin-bottom:0;">
+                  <label style="font-size:10px;">Description</label>
+                  <textarea class="form-control" id="hpe-c4-desc" rows="3"
+                            placeholder="Only admin-approved students..."></textarea>
+                </div>
+              </div>
+
+            </div><!-- /2×2 grid -->
+
+            <!-- Section 2 save button -->
+            <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;">
+              <button class="btn btn-primary btn-sm" id="btn-save-cards"
+                      onclick="saveHpSection('cards')" style="min-width:140px;">
+                💾 Save Feature Cards
+              </button>
+            </div>
+          </div><!-- /feature cards card -->
+
+          <!-- ════════════════════════════════════════════════════
+               SECTION 3 — SOCIAL & MAP LINKS
+               ════════════════════════════════════════════════════ -->
+          <div class="card" style="margin-bottom:20px;">
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;padding-bottom:14px;border-bottom:1px solid var(--border);">
+              <div style="font-size:28px;">🔗</div>
+              <div>
+                <div class="card-title" style="margin:0;">Social &amp; <span>Map Links</span></div>
+                <div style="font-size:var(--fs-xs);color:var(--text-muted);margin-top:2px;">
+                  The three buttons at the bottom of the Contact section on the home page
+                </div>
+              </div>
+            </div>
+
+            <div style="display:grid;grid-template-columns:1fr;gap:16px;">
+
+              <!-- Maps -->
+              <div style="display:flex;align-items:flex-start;gap:14px;">
+                <div style="width:44px;height:44px;border-radius:10px;background:rgba(0,212,255,0.1);border:1px solid rgba(0,212,255,0.3);
+                            display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;">📍</div>
+                <div class="form-group" style="flex:1;margin-bottom:0;min-width:0;">
+                  <label>Google Maps URL
+                    <span style="font-size:10px;color:var(--text-dim);font-weight:400;margin-left:6px;">Appears as "Find Us on Google Maps" button</span>
+                  </label>
+                  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                    <input class="form-control" id="hpe-maps-url" placeholder="https://maps.app.goo.gl/..." type="url" style="flex:1;min-width:0;">
+                    <a id="hpe-maps-test" href="#" target="_blank"
+                       style="font-size:11px;color:var(--neon-blue);white-space:nowrap;text-decoration:none;padding:8px 10px;border:1px solid rgba(0,212,255,0.3);border-radius:6px;flex-shrink:0;"
+                       onclick="this.href=document.getElementById('hpe-maps-url').value||'#'">Test ↗</a>
+                  </div>
+                </div>
+              </div>
+
+              <!-- YouTube -->
+              <div style="display:flex;align-items:flex-start;gap:14px;">
+                <div style="width:44px;height:44px;border-radius:10px;background:rgba(255,0,0,0.1);border:1px solid rgba(255,0,0,0.3);
+                            display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;">▶️</div>
+                <div class="form-group" style="flex:1;margin-bottom:0;min-width:0;">
+                  <label>YouTube Channel URL
+                    <span style="font-size:10px;color:var(--text-dim);font-weight:400;margin-left:6px;">Appears as "Subscribe on YouTube" button</span>
+                  </label>
+                  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                    <input class="form-control" id="hpe-youtube-url" placeholder="https://www.youtube.com/@..." type="url" style="flex:1;min-width:0;">
+                    <a id="hpe-yt-test" href="#" target="_blank"
+                       style="font-size:11px;color:#ff4444;white-space:nowrap;text-decoration:none;padding:8px 10px;border:1px solid rgba(255,0,0,0.3);border-radius:6px;flex-shrink:0;"
+                       onclick="this.href=document.getElementById('hpe-youtube-url').value||'#'">Test ↗</a>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Google Review -->
+              <div style="display:flex;align-items:flex-start;gap:14px;">
+                <div style="width:44px;height:44px;border-radius:10px;background:rgba(255,215,0,0.1);border:1px solid rgba(255,215,0,0.3);
+                            display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0;">⭐</div>
+                <div class="form-group" style="flex:1;margin-bottom:0;min-width:0;">
+                  <label>Google Review URL
+                    <span style="font-size:10px;color:var(--text-dim);font-weight:400;margin-left:6px;">Appears as "Rate Us on Google" button</span>
+                  </label>
+                  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+                    <input class="form-control" id="hpe-review-url" placeholder="https://g.page/r/..." type="url" style="flex:1;min-width:0;">
+                    <a id="hpe-rev-test" href="#" target="_blank"
+                       style="font-size:11px;color:#ffd700;white-space:nowrap;text-decoration:none;padding:8px 10px;border:1px solid rgba(255,215,0,0.3);border-radius:6px;flex-shrink:0;"
+                       onclick="this.href=document.getElementById('hpe-review-url').value||'#'">Test ↗</a>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+
+            <!-- Section 3 save button -->
+            <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;">
+              <button class="btn btn-primary btn-sm" id="btn-save-links"
+                      onclick="saveHpSection('links')" style="min-width:140px;">
+                💾 Save Social Links
+              </button>
+            </div>
+          </div><!-- /social links -->
+
+          <!-- ════════════════════════════════════════════════════
+               SECTION 4 — CONTACT INFO
+               These mirror the core institute fields — editing here
+               updates the same Firestore fields as Settings → Edit
+               ════════════════════════════════════════════════════ -->
+          <div class="card" style="margin-bottom:28px;">
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;padding-bottom:14px;border-bottom:1px solid var(--border);">
+              <div style="font-size:28px;">📋</div>
+              <div>
+                <div class="card-title" style="margin:0;">Contact <span>Info</span></div>
+                <div style="font-size:var(--fs-xs);color:var(--text-muted);margin-top:2px;">
+                  Shown in the Contact section on the home page and in student/print records.
+                  These are the same fields as Settings → Institute Info.
+                </div>
+              </div>
+            </div>
+            <div style="padding:8px 12px;background:rgba(255,200,0,0.06);border:1px solid rgba(255,200,0,0.25);border-radius:var(--radius-sm);margin-bottom:16px;font-size:var(--fs-xs);color:#ffb400;line-height:1.6;">
+              ⚠️ Changing these fields also updates them everywhere else — student portal, admin panel, printed records.
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;">
+              <div class="form-group">
+                <label>Director Name <span class="required">*</span></label>
+                <input class="form-control" id="hpe-director" placeholder="e.g. Pradeep Kumar">
+              </div>
+              <div class="form-group">
+                <label>Phone</label>
+                <input class="form-control" id="hpe-phone" placeholder="e.g. 6206437776" type="tel">
+              </div>
+              <div class="form-group">
+                <label>City</label>
+                <input class="form-control" id="hpe-city" placeholder="e.g. Buxar, Bihar"
+                       oninput="document.getElementById('hpe-preview-city').textContent=this.value||'...'">
+              </div>
+              <div class="form-group">
+                <label>Classes Offered</label>
+                <input class="form-control" id="hpe-classes" placeholder="e.g. Class 6 to 10 (BSEB Bihar Board)">
+              </div>
+              <div class="form-group" style="grid-column:1/-1;">
+                <label>Address</label>
+                <textarea class="form-control" id="hpe-address" rows="2"
+                          placeholder="Full address e.g. Turha Toli, Civil Line, Buxar — 802101"></textarea>
+              </div>
+            </div>
+            <!-- Section 4 save button -->
+            <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;">
+              <button class="btn btn-primary btn-sm" id="btn-save-contact"
+                      onclick="saveHpSection('contact')" style="min-width:140px;">
+                💾 Save Contact Info
+              </button>
+            </div>
+          </div><!-- /contact info -->
+
+        </div><!-- /max-width container -->
+      </div><!-- end a-page-homepage -->
   </div>
   </div><!-- end dashboard-area -->
 
@@ -5516,9 +5905,176 @@ function showAdminPage(pageId, addHistory = true) {
 
 
 // =============================================================
-// INIT ADMIN DASHBOARD
-// Called after successful admin login
+// HOME PAGE EDITOR — DEDICATED PAGE (a-page-homepage)
+// Loads current values from _instituteData (or INST_DEFAULTS)
+// into the standalone editor fields, and saves them back via
+// saveHpSection(). Completely separate from the Institute
+// Info modal to keep the UI clean and uncluttered.
 // =============================================================
+
+/** Pre-fill all Home Page Editor fields — fetches from Firestore if data not yet loaded */
+async function loadHomepageEditor() {
+  // If institute data isn't loaded yet, fetch it now (fixes logo missing on first load)
+  if (!window._instituteData) {
+    await loadInstituteInfo();
+  }
+  const d = window._instituteData || INST_DEFAULTS;
+
+  // ── Hero / badge / slogans ────────────────────────────────
+  const badge = d.hpBadge || INST_DEFAULTS.hpBadge;
+  const hi    = d.hpSloganHindi || INST_DEFAULTS.hpSloganHindi;
+  const en    = d.hpSloganEn    || INST_DEFAULTS.hpSloganEn;
+
+  setVal('hpe-badge',        badge);
+  setVal('hpe-slogan-hindi', hi);
+  setVal('hpe-slogan-en',    en);
+
+  // Live preview
+  setText('hpe-preview-badge',  badge);
+  setText('hpe-preview-city',   d.city || INST_DEFAULTS.city);
+  setText('hpe-preview-hindi',  hi);
+  setText('hpe-preview-en',     en);
+
+  // ── Feature cards ─────────────────────────────────────────
+  setVal('hpe-c1-icon',  d.hpCard1Icon  || INST_DEFAULTS.hpCard1Icon);
+  setVal('hpe-c1-title', d.hpCard1Title || INST_DEFAULTS.hpCard1Title);
+  setVal('hpe-c1-desc',  d.hpCard1Desc  || INST_DEFAULTS.hpCard1Desc);
+
+  setVal('hpe-c2-icon',  d.hpCard2Icon  || INST_DEFAULTS.hpCard2Icon);
+  setVal('hpe-c2-title', d.hpCard2Title || INST_DEFAULTS.hpCard2Title);
+  setVal('hpe-c2-desc',  d.hpCard2Desc  || INST_DEFAULTS.hpCard2Desc);
+
+  setVal('hpe-c3-icon',  d.hpCard3Icon  || INST_DEFAULTS.hpCard3Icon);
+  setVal('hpe-c3-title', d.hpCard3Title || INST_DEFAULTS.hpCard3Title);
+  setVal('hpe-c3-desc',  d.hpCard3Desc  || INST_DEFAULTS.hpCard3Desc);
+
+  setVal('hpe-c4-icon',  d.hpCard4Icon  || INST_DEFAULTS.hpCard4Icon);
+  setVal('hpe-c4-title', d.hpCard4Title || INST_DEFAULTS.hpCard4Title);
+  setVal('hpe-c4-desc',  d.hpCard4Desc  || INST_DEFAULTS.hpCard4Desc);
+
+  // ── Social / map links ────────────────────────────────────
+  setVal('hpe-maps-url',    d.hpMapsUrl    || INST_DEFAULTS.hpMapsUrl);
+  setVal('hpe-youtube-url', d.hpYoutubeUrl || INST_DEFAULTS.hpYoutubeUrl);
+  setVal('hpe-review-url',  d.hpReviewUrl  || INST_DEFAULTS.hpReviewUrl);
+
+  // ── Contact / core fields ─────────────────────────────────
+  setVal('hpe-director', d.director || INST_DEFAULTS.director);
+  setVal('hpe-phone',    d.phone    || INST_DEFAULTS.phone);
+  setVal('hpe-city',     d.city     || INST_DEFAULTS.city);
+  setVal('hpe-address',  d.address  || INST_DEFAULTS.address);
+  setVal('hpe-classes',  d.classes  || INST_DEFAULTS.classes);
+
+  // Hide any previous status message
+  const msg = document.getElementById('hp-editor-msg');
+  if (msg) msg.style.display = 'none';
+}
+
+
+/** Show a status message in the slim editor bar */
+function showHpEditorMsg(text, type) {
+  const el = document.getElementById('hp-editor-msg');
+  if (!el) return;
+  el.textContent = text;
+  el.style.cssText = `display:block; font-size:var(--fs-xs); font-weight:600;
+    color:${type === 'success' ? '#00d4ff' : 'var(--danger)'};`;
+  if (type === 'success') setTimeout(() => { el.style.display = 'none'; }, 4000);
+}
+
+/** Per-section save — only saves fields belonging to the requested section.
+ *  section: 'hero' | 'cards' | 'links' | 'contact'
+ *  Always spreads ...window._instituteData so other sections aren't lost. */
+async function saveHpSection(section) {
+  // Map section → button ID
+  const btnIds = { hero:'btn-save-hero', cards:'btn-save-cards', links:'btn-save-links', contact:'btn-save-contact' };
+  const btn = document.getElementById(btnIds[section]);
+  const origText = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Saving…'; }
+
+  // Build partial update from only this section's fields
+  let partial = {};
+
+  if (section === 'hero') {
+    partial = {
+      hpBadge:       getVal('hpe-badge')        || INST_DEFAULTS.hpBadge,
+      hpSloganHindi: getVal('hpe-slogan-hindi')  || INST_DEFAULTS.hpSloganHindi,
+      hpSloganEn:    getVal('hpe-slogan-en')     || INST_DEFAULTS.hpSloganEn,
+    };
+  } else if (section === 'cards') {
+    partial = {
+      hpCard1Icon:  getVal('hpe-c1-icon')  || INST_DEFAULTS.hpCard1Icon,
+      hpCard1Title: getVal('hpe-c1-title') || INST_DEFAULTS.hpCard1Title,
+      hpCard1Desc:  getVal('hpe-c1-desc')  || INST_DEFAULTS.hpCard1Desc,
+      hpCard2Icon:  getVal('hpe-c2-icon')  || INST_DEFAULTS.hpCard2Icon,
+      hpCard2Title: getVal('hpe-c2-title') || INST_DEFAULTS.hpCard2Title,
+      hpCard2Desc:  getVal('hpe-c2-desc')  || INST_DEFAULTS.hpCard2Desc,
+      hpCard3Icon:  getVal('hpe-c3-icon')  || INST_DEFAULTS.hpCard3Icon,
+      hpCard3Title: getVal('hpe-c3-title') || INST_DEFAULTS.hpCard3Title,
+      hpCard3Desc:  getVal('hpe-c3-desc')  || INST_DEFAULTS.hpCard3Desc,
+      hpCard4Icon:  getVal('hpe-c4-icon')  || INST_DEFAULTS.hpCard4Icon,
+      hpCard4Title: getVal('hpe-c4-title') || INST_DEFAULTS.hpCard4Title,
+      hpCard4Desc:  getVal('hpe-c4-desc')  || INST_DEFAULTS.hpCard4Desc,
+    };
+  } else if (section === 'links') {
+    partial = {
+      hpMapsUrl:    getVal('hpe-maps-url')    || INST_DEFAULTS.hpMapsUrl,
+      hpYoutubeUrl: getVal('hpe-youtube-url') || INST_DEFAULTS.hpYoutubeUrl,
+      hpReviewUrl:  getVal('hpe-review-url')  || INST_DEFAULTS.hpReviewUrl,
+    };
+  } else if (section === 'contact') {
+    const director = getVal('hpe-director') || INST_DEFAULTS.director;
+    if (!director.trim()) {
+      showHpEditorMsg('⚠️ Director name is required.', 'error');
+      if (btn) { btn.disabled = false; btn.textContent = origText; }
+      return;
+    }
+    partial = {
+      director,
+      phone:   getVal('hpe-phone')    || INST_DEFAULTS.phone,
+      city:    getVal('hpe-city')     || INST_DEFAULTS.city,
+      address: getVal('hpe-address')  || INST_DEFAULTS.address,
+      classes: getVal('hpe-classes')  || INST_DEFAULTS.classes,
+    };
+  }
+
+  try {
+    // Merge with existing data so logo / other sections aren't lost
+    const updated = { ...window._instituteData, ...partial };
+    await db.collection('admin').doc('institute').set(updated);
+    window._instituteData = updated;
+
+    // Push to live DOM
+    applyInstituteDataEverywhere(updated);
+    renderInstituteInfoCard();
+
+    // Show success on the button itself (green flash)
+    if (btn) {
+      btn.textContent = '✅ Saved!';
+      btn.style.background = '#00a86b';
+      setTimeout(() => {
+        btn.disabled = false;
+        btn.textContent = origText;
+        btn.style.background = '';
+      }, 2000);
+    }
+    showHpEditorMsg('✅ Saved!', 'success');
+    showToast('✅ Saved!', 'success');
+  } catch (err) {
+    showHpEditorMsg('❌ Save failed. Check connection.', 'error');
+    if (btn) { btn.disabled = false; btn.textContent = origText; }
+    console.error('saveHpSection error:', err);
+  }
+}
+
+/** Safe value getter for form fields */
+function getVal(id) {
+  return (document.getElementById(id)?.value || '').trim();
+}
+
+/** Safe value setter for form fields (input + textarea) */
+function setVal(id, val) {
+  const el = document.getElementById(id);
+  if (el) el.value = val || '';
+}
 function initAdminDashboard() {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   buildAdminDashboardHTML();
@@ -7535,6 +8091,7 @@ const DEFAULT_LOGO_SRC = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3
 
 // Default values (fallback if not in Firestore)
 const INST_DEFAULTS = {
+  // ── Core Info ──────────────────────────────────────────────
   name:      INSTITUTE_CONFIG.name,
   shortName: INSTITUTE_CONFIG.shortName,
   director:  INSTITUTE_CONFIG.director,
@@ -7542,7 +8099,37 @@ const INST_DEFAULTS = {
   city:      INSTITUTE_CONFIG.city,
   address:   INSTITUTE_CONFIG.address,
   classes:   'Class 6 to 10 (BSEB Bihar Board)',
-  logo:      ''
+  logo:      '',
+
+  // ── Home Page — Hero / Badge / Slogans ────────────────────
+  // These appear in the top badge and tagline lines below the logo
+  hpBadge:      'Secure Learning Platform',   // text inside hero badge (city is appended automatically)
+  hpSloganHindi:'आपका भविष्य, हमारी ज़िम्मेदारी',  // Hindi tagline below heading
+  hpSloganEn:   'Your Future, Our Responsibility', // English tagline below Hindi
+
+  // ── Home Page — Feature Cards (4 cards) ───────────────────
+  // Each card: icon (emoji), title, description
+  hpCard1Icon: '📚',
+  hpCard1Title:'Study Materials',
+  hpCard1Desc: 'Notes, assignments, DPPs and previous year papers — all organised by subject and chapter.',
+
+  hpCard2Icon: '🎯',
+  hpCard2Title:'Bihar & CBSE Board',
+  hpCard2Desc: 'Expert preparation for Class 6-10 BSEB and Class 9-10 CBSE students of Buxar.',
+
+  hpCard3Icon: '👨‍🏫',
+  hpCard3Title:'Director',
+  hpCard3Desc: '10+ years of teaching experience. Personal guidance for every student at Civil Line, Buxar.',
+
+  hpCard4Icon: '🔒',
+  hpCard4Title:'Secure Portal',
+  hpCard4Desc: 'Only admin-approved students can access materials. Your data is safe and private.',
+
+  // ── Home Page — Social / Map Links ───────────────────────
+  // These links appear in the Contact section buttons
+  hpMapsUrl:    'https://maps.app.goo.gl/pWSuecRDyFpVsxVq5',
+  hpYoutubeUrl: 'https://www.youtube.com/@PradeepsirBCI',
+  hpReviewUrl:  'https://g.page/r/CVV3GUY-gKWqEBM/review',
 };
 
 // In-memory state
@@ -7644,6 +8231,8 @@ function applyShortNameToSidebars(shortName) {
 }
 
 // Update ALL hardcoded institute text across every page
+// Called after loadInstituteInfo() and after saveInstituteInfo()
+// Any new DOM element that should reflect Firestore data must be added here.
 function applyInstituteDataEverywhere(d) {
   if (!d) return;
   const n    = d.name      || '';
@@ -7653,50 +8242,79 @@ function applyInstituteDataEverywhere(d) {
   const city = d.city      || '';
   const addr = d.address   || '';
 
-  // Page <title>
+  // ── Page <title> ─────────────────────────────────────────
   document.title = `${sn} — ${n} | ${city}`;
 
-  // Homepage navbar
+  // ── Homepage navbar ────────────────────────────────────────
   setText('hp-nav-shortname',  sn);
   setText('hp-nav-fullname',   n);
 
-  // Hero tagline city
-  setText('hp-hero-city', city);
+  // ── Hero section — badge + city ───────────────────────────
+  // hpBadge holds the prefix text ("Secure Learning Platform"), city is appended separately
+  setText('hp-badge-prefix', d.hpBadge || INST_DEFAULTS.hpBadge);
+  setText('hp-hero-city',    city);
 
-  // Feature card director desc
-  setText('hp-feature-director', `${dir} — Personal guidance for every student. ${city}.`);
+  // ── Hero section — slogans ────────────────────────────────
+  setText('hp-slogan-hindi', d.hpSloganHindi || INST_DEFAULTS.hpSloganHindi);
+  setText('hp-slogan-en',    d.hpSloganEn    || INST_DEFAULTS.hpSloganEn);
 
-  // Contact section
+  // ── Feature cards (all 4) — icon, title, desc ─────────────
+  // Card 1
+  setText('hp-card-1-icon',  d.hpCard1Icon  || INST_DEFAULTS.hpCard1Icon);
+  setText('hp-card-1-title', d.hpCard1Title || INST_DEFAULTS.hpCard1Title);
+  setText('hp-card-1-desc',  d.hpCard1Desc  || INST_DEFAULTS.hpCard1Desc);
+  // Card 2
+  setText('hp-card-2-icon',  d.hpCard2Icon  || INST_DEFAULTS.hpCard2Icon);
+  setText('hp-card-2-title', d.hpCard2Title || INST_DEFAULTS.hpCard2Title);
+  setText('hp-card-2-desc',  d.hpCard2Desc  || INST_DEFAULTS.hpCard2Desc);
+  // Card 3 — also updates the inner director span used elsewhere
+  setText('hp-card-3-icon',  d.hpCard3Icon  || INST_DEFAULTS.hpCard3Icon);
+  setText('hp-card-3-title', d.hpCard3Title || INST_DEFAULTS.hpCard3Title);
+  setText('hp-card-3-desc',  d.hpCard3Desc  || INST_DEFAULTS.hpCard3Desc);
+  // hp-feature-director is a legacy inner span inside card-3-desc — keep it updated too
+  setText('hp-feature-director', d.hpCard3Desc || INST_DEFAULTS.hpCard3Desc);
+  // Card 4
+  setText('hp-card-4-icon',  d.hpCard4Icon  || INST_DEFAULTS.hpCard4Icon);
+  setText('hp-card-4-title', d.hpCard4Title || INST_DEFAULTS.hpCard4Title);
+  setText('hp-card-4-desc',  d.hpCard4Desc  || INST_DEFAULTS.hpCard4Desc);
+
+  // ── Contact section ────────────────────────────────────────
   setHTML('hp-contact-director', dir);
   setHTML('hp-contact-phone',    ph);
   setHTML('hp-contact-address',  addr);
 
-  // Notice board tagline
+  // ── Contact section — social / map links (update href) ────
+  // setHref() is a safe helper defined below that only updates existing elements
+  setHref('hp-maps-link',    d.hpMapsUrl    || INST_DEFAULTS.hpMapsUrl);
+  setHref('hp-review-link',  d.hpReviewUrl  || INST_DEFAULTS.hpReviewUrl);
+  setHref('hp-youtube-link', d.hpYoutubeUrl || INST_DEFAULTS.hpYoutubeUrl);
+
+  // ── Notice board tagline ───────────────────────────────────
   setText('hp-notice-name', sn);
 
-  // Footer
+  // ── Footer ─────────────────────────────────────────────────
   setText('hp-footer-name', n);
   setText('hp-footer-city', city);
 
-  // Student sidebar
+  // ── Student sidebar ────────────────────────────────────────
   setText('s-sidebar-shortname', sn);
 
-  // Student stat card
+  // ── Student stat card ──────────────────────────────────────
   setText('s-stat-shortname', sn);
   setText('s-stat-name',      n.length > 18 ? sn : n);
 
-  // Student notice board page
+  // ── Student notice board page ──────────────────────────────
   setText('s-noticeboard-name',  n);
   setText('s-notice-empty-name', sn);
 
-  // Admin sidebar
+  // ── Admin sidebar ──────────────────────────────────────────
   setText('a-sidebar-shortname', sn);
 
-  // Admin dashboard welcome
+  // ── Admin dashboard welcome ────────────────────────────────
   setText('a-dash-name', n);
 }
 
-// Helpers
+// Helpers — safe DOM updaters used by applyInstituteDataEverywhere()
 function setText(id, val) {
   const el = document.getElementById(id);
   if (el && val) el.textContent = val;
@@ -7705,10 +8323,18 @@ function setHTML(id, val) {
   const el = document.getElementById(id);
   if (el && val) el.innerHTML = val;
 }
+// Update an anchor's href attribute (used for map/review/youtube links)
+function setHref(id, url) {
+  if (!url) return;
+  const el = document.getElementById(id);
+  if (el) el.href = url;
+}
 
-// Open Edit Institute modal — pre-fill fields
+// Open Edit Institute modal — pre-fill ALL fields (core + home page)
 function openEditInstituteModal() {
   const d = window._instituteData || INST_DEFAULTS;
+
+  // ── Core fields ──────────────────────────────────────────
   document.getElementById('ei-name').value      = d.name      || '';
   document.getElementById('ei-shortname').value = d.shortName || '';
   document.getElementById('ei-director').value  = d.director  || '';
@@ -7716,28 +8342,58 @@ function openEditInstituteModal() {
   document.getElementById('ei-city').value      = d.city      || '';
   document.getElementById('ei-address').value   = d.address   || '';
   document.getElementById('ei-classes').value   = d.classes   || '';
+
+  // ── Hero / badge / slogans ────────────────────────────────
+  document.getElementById('ei-badge').value        = d.hpBadge       || INST_DEFAULTS.hpBadge;
+  document.getElementById('ei-slogan-hindi').value = d.hpSloganHindi  || INST_DEFAULTS.hpSloganHindi;
+  document.getElementById('ei-slogan-en').value    = d.hpSloganEn     || INST_DEFAULTS.hpSloganEn;
+
+  // ── Feature cards ─────────────────────────────────────────
+  document.getElementById('ei-card1-icon').value  = d.hpCard1Icon  || INST_DEFAULTS.hpCard1Icon;
+  document.getElementById('ei-card1-title').value = d.hpCard1Title || INST_DEFAULTS.hpCard1Title;
+  document.getElementById('ei-card1-desc').value  = d.hpCard1Desc  || INST_DEFAULTS.hpCard1Desc;
+
+  document.getElementById('ei-card2-icon').value  = d.hpCard2Icon  || INST_DEFAULTS.hpCard2Icon;
+  document.getElementById('ei-card2-title').value = d.hpCard2Title || INST_DEFAULTS.hpCard2Title;
+  document.getElementById('ei-card2-desc').value  = d.hpCard2Desc  || INST_DEFAULTS.hpCard2Desc;
+
+  document.getElementById('ei-card3-icon').value  = d.hpCard3Icon  || INST_DEFAULTS.hpCard3Icon;
+  document.getElementById('ei-card3-title').value = d.hpCard3Title || INST_DEFAULTS.hpCard3Title;
+  document.getElementById('ei-card3-desc').value  = d.hpCard3Desc  || INST_DEFAULTS.hpCard3Desc;
+
+  document.getElementById('ei-card4-icon').value  = d.hpCard4Icon  || INST_DEFAULTS.hpCard4Icon;
+  document.getElementById('ei-card4-title').value = d.hpCard4Title || INST_DEFAULTS.hpCard4Title;
+  document.getElementById('ei-card4-desc').value  = d.hpCard4Desc  || INST_DEFAULTS.hpCard4Desc;
+
+  // ── Social / Map links ────────────────────────────────────
+  document.getElementById('ei-maps-url').value    = d.hpMapsUrl    || INST_DEFAULTS.hpMapsUrl;
+  document.getElementById('ei-youtube-url').value = d.hpYoutubeUrl || INST_DEFAULTS.hpYoutubeUrl;
+  document.getElementById('ei-review-url').value  = d.hpReviewUrl  || INST_DEFAULTS.hpReviewUrl;
+
+  // Hide any previous error message
   const msgEl = document.getElementById('edit-inst-msg');
   if (msgEl) msgEl.style.display = 'none';
+
   openModal('modal-edit-institute');
 }
 
 // Save institute info to Firestore
-// Show confirmation before saving institute info
+// Show confirmation modal before applying changes
+// Validates required fields and shows a preview of all new values
 function confirmInstituteEdit() {
   const name      = document.getElementById('ei-name').value.trim();
   const shortName = document.getElementById('ei-shortname').value.trim();
   const director  = document.getElementById('ei-director').value.trim();
   const msgEl     = document.getElementById('edit-inst-msg');
 
-  // Basic validation first
+  // Required-field validation
   if (!name || !shortName || !director) {
-    msgEl.style.display = 'block';
     msgEl.style.cssText = 'display:block;padding:10px 14px;background:rgba(255,68,102,0.08);border:1px solid rgba(255,68,102,0.3);border-radius:var(--radius-sm);margin-bottom:12px;font-size:var(--fs-sm);color:var(--danger);';
     msgEl.textContent   = '⚠️ Name, Short Name and Director are required.';
     return;
   }
 
-  // Fill confirmation modal with the new values
+  // ── Core fields preview ───────────────────────────────────
   document.getElementById('inst-confirm-name').textContent      = name;
   document.getElementById('inst-confirm-short').textContent     = shortName;
   document.getElementById('inst-confirm-director').textContent  = director;
@@ -7746,10 +8402,23 @@ function confirmInstituteEdit() {
   document.getElementById('inst-confirm-address').textContent   = document.getElementById('ei-address').value.trim() || '—';
   document.getElementById('inst-confirm-classes').textContent   = document.getElementById('ei-classes').value.trim() || '—';
 
+  // ── Home page fields preview ──────────────────────────────
+  document.getElementById('inst-confirm-badge').textContent       = document.getElementById('ei-badge').value.trim()        || '—';
+  document.getElementById('inst-confirm-slogan-hi').textContent   = document.getElementById('ei-slogan-hindi').value.trim() || '—';
+  document.getElementById('inst-confirm-slogan-en').textContent   = document.getElementById('ei-slogan-en').value.trim()    || '—';
+  document.getElementById('inst-confirm-maps').textContent        = document.getElementById('ei-maps-url').value.trim()     || '—';
+  document.getElementById('inst-confirm-youtube').textContent     = document.getElementById('ei-youtube-url').value.trim()  || '—';
+  document.getElementById('inst-confirm-review').textContent      = document.getElementById('ei-review-url').value.trim()   || '—';
+
   openModal('modal-confirm-institute');
 }
 
+// Save ALL institute info (core + home page fields) to Firestore
+// Falls back to INST_DEFAULTS for any field left blank
 async function saveInstituteInfo() {
+  const msgEl = document.getElementById('edit-inst-msg');
+
+  // ── Read core fields ──────────────────────────────────────
   const name      = document.getElementById('ei-name').value.trim();
   const shortName = document.getElementById('ei-shortname').value.trim();
   const director  = document.getElementById('ei-director').value.trim();
@@ -7757,27 +8426,75 @@ async function saveInstituteInfo() {
   const city      = document.getElementById('ei-city').value.trim();
   const address   = document.getElementById('ei-address').value.trim();
   const classes   = document.getElementById('ei-classes').value.trim();
-  const msgEl     = document.getElementById('edit-inst-msg');
 
+  // ── Read home page — badge / slogans ─────────────────────
+  const hpBadge       = document.getElementById('ei-badge').value.trim()        || INST_DEFAULTS.hpBadge;
+  const hpSloganHindi = document.getElementById('ei-slogan-hindi').value.trim() || INST_DEFAULTS.hpSloganHindi;
+  const hpSloganEn    = document.getElementById('ei-slogan-en').value.trim()    || INST_DEFAULTS.hpSloganEn;
+
+  // ── Read home page — feature cards ───────────────────────
+  const hpCard1Icon  = document.getElementById('ei-card1-icon').value.trim()  || INST_DEFAULTS.hpCard1Icon;
+  const hpCard1Title = document.getElementById('ei-card1-title').value.trim() || INST_DEFAULTS.hpCard1Title;
+  const hpCard1Desc  = document.getElementById('ei-card1-desc').value.trim()  || INST_DEFAULTS.hpCard1Desc;
+
+  const hpCard2Icon  = document.getElementById('ei-card2-icon').value.trim()  || INST_DEFAULTS.hpCard2Icon;
+  const hpCard2Title = document.getElementById('ei-card2-title').value.trim() || INST_DEFAULTS.hpCard2Title;
+  const hpCard2Desc  = document.getElementById('ei-card2-desc').value.trim()  || INST_DEFAULTS.hpCard2Desc;
+
+  const hpCard3Icon  = document.getElementById('ei-card3-icon').value.trim()  || INST_DEFAULTS.hpCard3Icon;
+  const hpCard3Title = document.getElementById('ei-card3-title').value.trim() || INST_DEFAULTS.hpCard3Title;
+  const hpCard3Desc  = document.getElementById('ei-card3-desc').value.trim()  || INST_DEFAULTS.hpCard3Desc;
+
+  const hpCard4Icon  = document.getElementById('ei-card4-icon').value.trim()  || INST_DEFAULTS.hpCard4Icon;
+  const hpCard4Title = document.getElementById('ei-card4-title').value.trim() || INST_DEFAULTS.hpCard4Title;
+  const hpCard4Desc  = document.getElementById('ei-card4-desc').value.trim()  || INST_DEFAULTS.hpCard4Desc;
+
+  // ── Read home page — social links ─────────────────────────
+  const hpMapsUrl    = document.getElementById('ei-maps-url').value.trim()    || INST_DEFAULTS.hpMapsUrl;
+  const hpYoutubeUrl = document.getElementById('ei-youtube-url').value.trim() || INST_DEFAULTS.hpYoutubeUrl;
+  const hpReviewUrl  = document.getElementById('ei-review-url').value.trim()  || INST_DEFAULTS.hpReviewUrl;
+
+  // ── Required field guard (should have been caught by confirmInstituteEdit,
+  //    but we double-check here for safety) ──────────────────
   if (!name || !shortName || !director) {
-    msgEl.style.display = 'block';
     msgEl.style.cssText = 'display:block;padding:10px 14px;background:rgba(255,68,102,0.08);border:1px solid rgba(255,68,102,0.3);border-radius:var(--radius-sm);margin-bottom:12px;font-size:var(--fs-sm);color:var(--danger);';
     msgEl.textContent   = '⚠️ Name, Short Name and Director are required.';
     return;
   }
 
   try {
-    const updated = { ...window._instituteData, name, shortName, director, phone, city, address, classes };
+    // Build the complete updated object — spread existing data first so
+    // fields not in this form (e.g. logo, logoHistory) are preserved
+    const updated = {
+      ...window._instituteData,
+      // Core
+      name, shortName, director, phone, city, address, classes,
+      // Hero / badge / slogans
+      hpBadge, hpSloganHindi, hpSloganEn,
+      // Feature cards
+      hpCard1Icon, hpCard1Title, hpCard1Desc,
+      hpCard2Icon, hpCard2Title, hpCard2Desc,
+      hpCard3Icon, hpCard3Title, hpCard3Desc,
+      hpCard4Icon, hpCard4Title, hpCard4Desc,
+      // Social / map links
+      hpMapsUrl, hpYoutubeUrl, hpReviewUrl,
+    };
+
+    // Persist to Firestore
     await db.collection('admin').doc('institute').set(updated);
+
+    // Update in-memory cache so rest of app sees new values immediately
     window._instituteData = updated;
+
+    // Re-render the info card in Settings and push to all DOM elements
     renderInstituteInfoCard();
+
     closeModal('modal-edit-institute');
     showToast('✅ Institute info updated!', 'success');
   } catch (err) {
-    msgEl.style.display = 'block';
     msgEl.style.cssText = 'display:block;padding:10px 14px;background:rgba(255,68,102,0.08);border:1px solid rgba(255,68,102,0.3);border-radius:var(--radius-sm);margin-bottom:12px;font-size:var(--fs-sm);color:var(--danger);';
     msgEl.textContent   = '❌ Failed to save. Check internet and try again.';
-    console.error(err);
+    console.error('saveInstituteInfo error:', err);
   }
 }
 
@@ -9367,20 +10084,42 @@ console.log('🌐 Then deploy to Netlify for free hosting');
 <!-- =========================================================
      EDIT INSTITUTE INFO MODAL
      ========================================================= -->
+<!-- =============================================================
+     EDIT INSTITUTE INFO MODAL
+     Sections:
+       1. Core Info (name, shortname, director, phone, city, address, classes) — REQUIRED *
+       2. Home Page — Hero (badge prefix, Hindi slogan, English slogan)
+       3. Home Page — Feature Cards (4 cards × icon + title + desc)
+       4. Home Page — Social & Map Links (Google Maps, YouTube, Google Review)
+     All fields are stored in Firestore admin/institute.
+     Leaving a field blank keeps the INST_DEFAULTS value (no blank UI ever shown).
+     ============================================================= -->
 <div id="modal-edit-institute" class="modal-overlay" onclick="if(event.target===this)closeModal('modal-edit-institute')">
-  <div class="modal" style="max-width:520px; max-height:90vh; overflow-y:auto;">
-    <div class="modal-header">
+  <div class="modal" style="max-width:580px; max-height:90vh; overflow-y:auto;">
+    <div class="modal-header" style="position:sticky;top:0;z-index:10;background:var(--bg-card);border-bottom:1px solid var(--border);">
       <h3 class="modal-title">✏️ Edit Institute Info</h3>
       <button class="modal-close" onclick="closeModal('modal-edit-institute')">✕</button>
     </div>
     <div class="modal-body">
+
+      <!-- Error / validation message banner -->
       <div id="edit-inst-msg" style="display:none;margin-bottom:12px;"></div>
+
+      <!-- ════════════════════════════════════════════════════
+           SECTION 1 — CORE INSTITUTE INFO
+           ════════════════════════════════════════════════════ -->
+      <div style="font-size:var(--fs-xs);color:var(--neon-blue);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:14px;padding-bottom:6px;border-bottom:1px solid rgba(0,212,255,0.2);">
+        🏛️ Core Institute Info
+      </div>
+
       <div class="form-group">
         <label>Full Name <span class="required">*</span></label>
         <input class="form-control" id="ei-name" placeholder="e.g. Brilliant Coaching Institute">
       </div>
       <div class="form-group">
-        <label>Short Name <span class="required">*</span></label>
+        <label>Short Name <span class="required">*</span>
+          <span style="font-size:10px;color:var(--text-dim);font-weight:400;margin-left:6px;">Shown in sidebar &amp; badge</span>
+        </label>
         <input class="form-control" id="ei-shortname" placeholder="e.g. B.C.I">
       </div>
       <div class="form-group">
@@ -9389,7 +10128,7 @@ console.log('🌐 Then deploy to Netlify for free hosting');
       </div>
       <div class="form-group">
         <label>Phone</label>
-        <input class="form-control" id="ei-phone" placeholder="e.g. 6206437776">
+        <input class="form-control" id="ei-phone" placeholder="e.g. 6206437776" type="tel">
       </div>
       <div class="form-group">
         <label>City</label>
@@ -9397,16 +10136,188 @@ console.log('🌐 Then deploy to Netlify for free hosting');
       </div>
       <div class="form-group">
         <label>Address</label>
-        <textarea class="form-control" id="ei-address" rows="2" placeholder="Full address"></textarea>
+        <textarea class="form-control" id="ei-address" rows="2" placeholder="Full address e.g. Turha Toli, Civil Line, Buxar — 802101"></textarea>
       </div>
       <div class="form-group">
-        <label>Classes Offered</label>
+        <label>Classes Offered
+          <span style="font-size:10px;color:var(--text-dim);font-weight:400;margin-left:6px;">Shown in contact section</span>
+        </label>
         <input class="form-control" id="ei-classes" placeholder="e.g. Class 6 to 10 (BSEB Bihar Board)">
       </div>
-    </div>
-    <div class="modal-footer">
+
+      <!-- ════════════════════════════════════════════════════
+           SECTION 2 — HOME PAGE: HERO BADGE & SLOGANS
+           Collapsible — click the heading to expand/collapse
+           ════════════════════════════════════════════════════ -->
+      <div style="margin-top:24px;margin-bottom:14px;">
+        <!-- Collapsible section header — toggles ei-hero-section -->
+        <div onclick="toggleSection('ei-hero-section', this)"
+             style="cursor:pointer;display:flex;align-items:center;justify-content:space-between;
+                    padding:10px 14px;background:var(--bg-card2);border-radius:var(--radius-sm);
+                    border:1px solid var(--border);user-select:none;">
+          <span style="font-size:var(--fs-xs);color:var(--neon-blue);text-transform:uppercase;letter-spacing:1px;font-weight:700;">
+            🎓 Home Page — Hero Badge &amp; Slogans
+          </span>
+          <span id="ei-hero-section-arrow" style="color:var(--text-dim);font-size:12px;transition:transform 0.2s;">▼</span>
+        </div>
+        <div id="ei-hero-section" style="display:none;padding:14px 4px 0;">
+          <div style="font-size:var(--fs-xs);color:var(--text-muted);margin-bottom:12px;line-height:1.6;padding:8px 10px;background:rgba(0,212,255,0.04);border-radius:6px;border-left:3px solid rgba(0,212,255,0.3);">
+            ℹ️ The badge shows: 🎓 <em>[Badge Text]</em> — <em>[City]</em><br>
+            Leave blank to keep the current value.
+          </div>
+          <div class="form-group">
+            <label>Badge Text
+              <span style="font-size:10px;color:var(--text-dim);font-weight:400;margin-left:6px;">City is appended automatically</span>
+            </label>
+            <input class="form-control" id="ei-badge" placeholder="e.g. Secure Learning Platform">
+          </div>
+          <div class="form-group">
+            <label>Hindi Slogan 🇮🇳</label>
+            <input class="form-control" id="ei-slogan-hindi" placeholder="e.g. आपका भविष्य, हमारी ज़िम्मेदारी">
+          </div>
+          <div class="form-group">
+            <label>English Slogan 🇬🇧</label>
+            <input class="form-control" id="ei-slogan-en" placeholder="e.g. Your Future, Our Responsibility">
+          </div>
+        </div>
+      </div>
+
+      <!-- ════════════════════════════════════════════════════
+           SECTION 3 — HOME PAGE: FEATURE CARDS (4 cards)
+           Each card: icon (emoji), title, description
+           ════════════════════════════════════════════════════ -->
+      <div style="margin-bottom:14px;">
+        <div onclick="toggleSection('ei-cards-section', this)"
+             style="cursor:pointer;display:flex;align-items:center;justify-content:space-between;
+                    padding:10px 14px;background:var(--bg-card2);border-radius:var(--radius-sm);
+                    border:1px solid var(--border);user-select:none;">
+          <span style="font-size:var(--fs-xs);color:var(--neon-blue);text-transform:uppercase;letter-spacing:1px;font-weight:700;">
+            🃏 Home Page — Feature Cards (4 cards)
+          </span>
+          <span id="ei-cards-section-arrow" style="color:var(--text-dim);font-size:12px;transition:transform 0.2s;">▼</span>
+        </div>
+        <div id="ei-cards-section" style="display:none;padding:14px 4px 0;">
+          <div style="font-size:var(--fs-xs);color:var(--text-muted);margin-bottom:12px;line-height:1.6;padding:8px 10px;background:rgba(0,212,255,0.04);border-radius:6px;border-left:3px solid rgba(0,212,255,0.3);">
+            ℹ️ Use a single emoji for the icon. Leave any field blank to keep its current value.
+          </div>
+
+          <!-- Card 1 -->
+          <div style="margin-bottom:16px;padding:12px;background:var(--bg-card2);border-radius:var(--radius-sm);border:1px solid var(--border);">
+            <div style="font-size:var(--fs-xs);color:var(--text-dim);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;font-weight:600;">Card 1</div>
+            <div style="display:grid;grid-template-columns:60px 1fr;gap:8px;margin-bottom:8px;">
+              <div class="form-group" style="margin-bottom:0;">
+                <label style="font-size:10px;">Icon</label>
+                <input class="form-control" id="ei-card1-icon" placeholder="📚" style="text-align:center;font-size:20px;padding:6px 4px;">
+              </div>
+              <div class="form-group" style="margin-bottom:0;">
+                <label style="font-size:10px;">Title</label>
+                <input class="form-control" id="ei-card1-title" placeholder="Study Materials">
+              </div>
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+              <label style="font-size:10px;">Description</label>
+              <textarea class="form-control" id="ei-card1-desc" rows="2" placeholder="Notes, assignments, DPPs..."></textarea>
+            </div>
+          </div>
+
+          <!-- Card 2 -->
+          <div style="margin-bottom:16px;padding:12px;background:var(--bg-card2);border-radius:var(--radius-sm);border:1px solid var(--border);">
+            <div style="font-size:var(--fs-xs);color:var(--text-dim);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;font-weight:600;">Card 2</div>
+            <div style="display:grid;grid-template-columns:60px 1fr;gap:8px;margin-bottom:8px;">
+              <div class="form-group" style="margin-bottom:0;">
+                <label style="font-size:10px;">Icon</label>
+                <input class="form-control" id="ei-card2-icon" placeholder="🎯" style="text-align:center;font-size:20px;padding:6px 4px;">
+              </div>
+              <div class="form-group" style="margin-bottom:0;">
+                <label style="font-size:10px;">Title</label>
+                <input class="form-control" id="ei-card2-title" placeholder="Bihar & CBSE Board">
+              </div>
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+              <label style="font-size:10px;">Description</label>
+              <textarea class="form-control" id="ei-card2-desc" rows="2" placeholder="Expert preparation..."></textarea>
+            </div>
+          </div>
+
+          <!-- Card 3 -->
+          <div style="margin-bottom:16px;padding:12px;background:var(--bg-card2);border-radius:var(--radius-sm);border:1px solid var(--border);">
+            <div style="font-size:var(--fs-xs);color:var(--text-dim);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;font-weight:600;">Card 3</div>
+            <div style="display:grid;grid-template-columns:60px 1fr;gap:8px;margin-bottom:8px;">
+              <div class="form-group" style="margin-bottom:0;">
+                <label style="font-size:10px;">Icon</label>
+                <input class="form-control" id="ei-card3-icon" placeholder="👨‍🏫" style="text-align:center;font-size:20px;padding:6px 4px;">
+              </div>
+              <div class="form-group" style="margin-bottom:0;">
+                <label style="font-size:10px;">Title</label>
+                <input class="form-control" id="ei-card3-title" placeholder="Director">
+              </div>
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+              <label style="font-size:10px;">Description</label>
+              <textarea class="form-control" id="ei-card3-desc" rows="2" placeholder="10+ years of teaching..."></textarea>
+            </div>
+          </div>
+
+          <!-- Card 4 -->
+          <div style="padding:12px;background:var(--bg-card2);border-radius:var(--radius-sm);border:1px solid var(--border);">
+            <div style="font-size:var(--fs-xs);color:var(--text-dim);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;font-weight:600;">Card 4</div>
+            <div style="display:grid;grid-template-columns:60px 1fr;gap:8px;margin-bottom:8px;">
+              <div class="form-group" style="margin-bottom:0;">
+                <label style="font-size:10px;">Icon</label>
+                <input class="form-control" id="ei-card4-icon" placeholder="🔒" style="text-align:center;font-size:20px;padding:6px 4px;">
+              </div>
+              <div class="form-group" style="margin-bottom:0;">
+                <label style="font-size:10px;">Title</label>
+                <input class="form-control" id="ei-card4-title" placeholder="Secure Portal">
+              </div>
+            </div>
+            <div class="form-group" style="margin-bottom:0;">
+              <label style="font-size:10px;">Description</label>
+              <textarea class="form-control" id="ei-card4-desc" rows="2" placeholder="Only admin-approved students..."></textarea>
+            </div>
+          </div>
+
+        </div><!-- /ei-cards-section -->
+      </div>
+
+      <!-- ════════════════════════════════════════════════════
+           SECTION 4 — HOME PAGE: SOCIAL & MAP LINKS
+           ════════════════════════════════════════════════════ -->
+      <div style="margin-bottom:8px;">
+        <div onclick="toggleSection('ei-links-section', this)"
+             style="cursor:pointer;display:flex;align-items:center;justify-content:space-between;
+                    padding:10px 14px;background:var(--bg-card2);border-radius:var(--radius-sm);
+                    border:1px solid var(--border);user-select:none;">
+          <span style="font-size:var(--fs-xs);color:var(--neon-blue);text-transform:uppercase;letter-spacing:1px;font-weight:700;">
+            🔗 Home Page — Social &amp; Map Links
+          </span>
+          <span id="ei-links-section-arrow" style="color:var(--text-dim);font-size:12px;transition:transform 0.2s;">▼</span>
+        </div>
+        <div id="ei-links-section" style="display:none;padding:14px 4px 0;">
+          <div style="font-size:var(--fs-xs);color:var(--text-muted);margin-bottom:12px;line-height:1.6;padding:8px 10px;background:rgba(0,212,255,0.04);border-radius:6px;border-left:3px solid rgba(0,212,255,0.3);">
+            ℹ️ These links appear as buttons in the Contact section of the home page. Paste the full URL including https://
+          </div>
+          <div class="form-group">
+            <label>📍 Google Maps URL</label>
+            <input class="form-control" id="ei-maps-url" placeholder="https://maps.app.goo.gl/..." type="url">
+          </div>
+          <div class="form-group">
+            <label>▶️ YouTube Channel URL</label>
+            <input class="form-control" id="ei-youtube-url" placeholder="https://www.youtube.com/@YourChannel" type="url">
+          </div>
+          <div class="form-group">
+            <label>⭐ Google Review URL</label>
+            <input class="form-control" id="ei-review-url" placeholder="https://g.page/r/..." type="url">
+          </div>
+        </div>
+      </div><!-- /ei-links-section -->
+
+    </div><!-- /modal-body -->
+
+    <!-- Sticky footer with action buttons -->
+    <div class="modal-footer" style="position:sticky;bottom:0;z-index:10;background:var(--bg-card);border-top:1px solid var(--border);">
       <button class="btn btn-ghost" onclick="closeModal('modal-edit-institute')">Cancel</button>
-      <button class="btn btn-primary" onclick="confirmInstituteEdit()">💾 Save Changes</button>
+      <button class="btn btn-primary" onclick="confirmInstituteEdit()">💾 Review &amp; Save</button>
     </div>
   </div>
 </div>
@@ -9452,22 +10363,29 @@ console.log('🌐 Then deploy to Netlify for free hosting');
   </div>
 </div>
 
-<!-- =========================================================
+<!-- =============================================================
      CONFIRM INSTITUTE EDIT MODAL
-     ========================================================= -->
+     Shows a preview of ALL fields before saving.
+     Core fields always visible; home-page fields in a collapsible section.
+     IDs: inst-confirm-* — filled by confirmInstituteEdit()
+     ============================================================= -->
 <div id="modal-confirm-institute" class="modal-overlay" onclick="if(event.target===this)closeModal('modal-confirm-institute')">
-  <div class="modal" style="max-width:480px;">
-    <div class="modal-header">
+  <div class="modal" style="max-width:500px;max-height:90vh;overflow-y:auto;">
+    <div class="modal-header" style="position:sticky;top:0;z-index:10;background:var(--bg-card);border-bottom:1px solid var(--border);">
       <h3 class="modal-title">⚠️ Please Double-Check</h3>
       <button class="modal-close" onclick="closeModal('modal-confirm-institute')">✕</button>
     </div>
     <div class="modal-body">
+
+      <!-- Warning banner -->
       <div style="padding:12px 14px;background:rgba(255,200,0,0.07);border:1px solid rgba(255,200,0,0.3);border-radius:var(--radius-sm);margin-bottom:18px;font-size:var(--fs-sm);line-height:1.7;">
         🌐 These details appear at <strong>multiple places</strong> — homepage, student portal, admin panel, printed records and WhatsApp shares.<br><br>
         Please review carefully before confirming.
       </div>
-      <div style="font-size:var(--fs-xs);color:var(--text-dim);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;">New Details to be Applied:</div>
-      <div style="background:var(--bg-card2);border-radius:var(--radius-sm);border:1px solid var(--border);overflow:hidden;">
+
+      <!-- ── Core Fields preview ──────────────────────────────── -->
+      <div style="font-size:var(--fs-xs);color:var(--text-dim);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px;">Core Details:</div>
+      <div style="background:var(--bg-card2);border-radius:var(--radius-sm);border:1px solid var(--border);overflow:hidden;margin-bottom:16px;">
         <div style="display:flex;gap:12px;padding:9px 14px;border-bottom:1px solid var(--border);">
           <div style="font-size:var(--fs-xs);color:var(--text-dim);min-width:110px;padding-top:2px;text-transform:uppercase;letter-spacing:0.4px;">Full Name</div>
           <div id="inst-confirm-name" style="font-size:var(--fs-sm);color:var(--text-white);font-weight:500;"></div>
@@ -9497,8 +10415,55 @@ console.log('🌐 Then deploy to Netlify for free hosting');
           <div id="inst-confirm-classes" style="font-size:var(--fs-sm);color:var(--text-white);font-weight:500;"></div>
         </div>
       </div>
-    </div>
-    <div class="modal-footer" style="flex-direction:column;gap:10px;align-items:stretch;">
+
+      <!-- ── Home Page Fields preview (collapsible) ───────────── -->
+      <div onclick="toggleSection('conf-hp-section', this)"
+           style="cursor:pointer;display:flex;align-items:center;justify-content:space-between;
+                  padding:9px 14px;background:var(--bg-card2);border-radius:var(--radius-sm);
+                  border:1px solid var(--border);user-select:none;margin-bottom:10px;">
+        <span style="font-size:var(--fs-xs);color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;">
+          🌐 Home Page Details (click to review)
+        </span>
+        <span id="conf-hp-section-arrow" style="color:var(--text-dim);font-size:12px;transition:transform 0.2s;">▼</span>
+      </div>
+      <div id="conf-hp-section" style="display:none;">
+        <div style="background:var(--bg-card2);border-radius:var(--radius-sm);border:1px solid var(--border);overflow:hidden;">
+          <!-- Badge -->
+          <div style="display:flex;gap:12px;padding:9px 14px;border-bottom:1px solid var(--border);">
+            <div style="font-size:var(--fs-xs);color:var(--text-dim);min-width:110px;padding-top:2px;text-transform:uppercase;letter-spacing:0.4px;">Badge</div>
+            <div id="inst-confirm-badge" style="font-size:var(--fs-sm);color:var(--text-white);font-weight:500;"></div>
+          </div>
+          <!-- Hindi slogan -->
+          <div style="display:flex;gap:12px;padding:9px 14px;border-bottom:1px solid var(--border);">
+            <div style="font-size:var(--fs-xs);color:var(--text-dim);min-width:110px;padding-top:2px;text-transform:uppercase;letter-spacing:0.4px;">Hindi Slogan</div>
+            <div id="inst-confirm-slogan-hi" style="font-size:var(--fs-sm);color:var(--text-white);font-weight:500;"></div>
+          </div>
+          <!-- English slogan -->
+          <div style="display:flex;gap:12px;padding:9px 14px;border-bottom:1px solid var(--border);">
+            <div style="font-size:var(--fs-xs);color:var(--text-dim);min-width:110px;padding-top:2px;text-transform:uppercase;letter-spacing:0.4px;">Eng Slogan</div>
+            <div id="inst-confirm-slogan-en" style="font-size:var(--fs-sm);color:var(--text-white);font-weight:500;"></div>
+          </div>
+          <!-- Maps link -->
+          <div style="display:flex;gap:12px;padding:9px 14px;border-bottom:1px solid var(--border);">
+            <div style="font-size:var(--fs-xs);color:var(--text-dim);min-width:110px;padding-top:2px;text-transform:uppercase;letter-spacing:0.4px;">Maps URL</div>
+            <div id="inst-confirm-maps" style="font-size:var(--fs-sm);color:var(--neon-blue);font-weight:500;word-break:break-all;"></div>
+          </div>
+          <!-- YouTube link -->
+          <div style="display:flex;gap:12px;padding:9px 14px;border-bottom:1px solid var(--border);">
+            <div style="font-size:var(--fs-xs);color:var(--text-dim);min-width:110px;padding-top:2px;text-transform:uppercase;letter-spacing:0.4px;">YouTube URL</div>
+            <div id="inst-confirm-youtube" style="font-size:var(--fs-sm);color:var(--neon-blue);font-weight:500;word-break:break-all;"></div>
+          </div>
+          <!-- Review link -->
+          <div style="display:flex;gap:12px;padding:9px 14px;">
+            <div style="font-size:var(--fs-xs);color:var(--text-dim);min-width:110px;padding-top:2px;text-transform:uppercase;letter-spacing:0.4px;">Review URL</div>
+            <div id="inst-confirm-review" style="font-size:var(--fs-sm);color:var(--neon-blue);font-weight:500;word-break:break-all;"></div>
+          </div>
+        </div>
+      </div><!-- /conf-hp-section -->
+
+    </div><!-- /modal-body -->
+
+    <div class="modal-footer" style="position:sticky;bottom:0;z-index:10;background:var(--bg-card);border-top:1px solid var(--border);flex-direction:column;gap:10px;align-items:stretch;">
       <button class="btn btn-primary" onclick="closeModal('modal-confirm-institute'); saveInstituteInfo();">
         ✅ Everything Looks Correct — Apply Changes
       </button>
