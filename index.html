@@ -2992,7 +2992,6 @@ async function handleStudentRegister() {
 
   // Build confirmation details grid
   const details = [
-    { label: 'Unique ID / ID', value: `<strong style="color:var(--neon-blue);">${docId}</strong>` },
     { label: 'Session / सत्र', value: session },
     { label: 'Board / बोर्ड', value: board },
     { label: 'Class / कक्षा', value: className },
@@ -3079,8 +3078,8 @@ async function submitRegistrationConfirmed() {
 
     showBilingualPopup(
       '🎉 Submitted Successfully! / सफलतापूर्वक जमा!',
-      `Your registration has been submitted successfully!\n\nYour Unique ID: ${data.docId}\n\nPlease note this ID for your records.\nYou will be able to login after admin approval.\nCome back after some time to check your status.`,
-      `आपका पंजीकरण सफलतापूर्वक जमा हो गया!\n\nआपकी यूनीक ID: ${data.docId}\n\nकृपया यह ID अपने पास नोट कर लें।\nएडमिन की स्वीकृति के बाद आप लॉगिन कर सकेंगे।\nकुछ समय बाद अपनी स्थिति जांचने के लिए वापस आएं।`,
+      `Your registration has been submitted successfully!\n\nYou will be able to login after admin approval.\nCome back after some time to check your status.`,
+      `आपका पंजीकरण सफलतापूर्वक जमा हो गया!\n\nएडमिन की स्वीकृति के बाद आप लॉगिन कर सकेंगे।\nकुछ समय बाद अपनी स्थिति जांचने के लिए वापस आएं।`,
       () => showPage('page-home')
     );
 
@@ -3824,7 +3823,6 @@ function buildStudentDashboardHTML() {
             </div>
             <div style="display:flex; flex-direction:column; gap:16px;">
               ${[
-                { icon:'🪪', label:'Student ID',    val: `<span style="color:var(--neon-blue);font-weight:700;">${student.studentId || student.id}</span>` },
                 { icon:'📅', label:'Session',       val: student.session || '—' },
                 { icon:'📋', label:'Board',         val: student.board || 'BSEB' },
                 { icon:'🎓', label:'Class',         val: className },
