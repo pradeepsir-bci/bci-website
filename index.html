@@ -4810,6 +4810,17 @@ function buildAdminDashboardHTML() {
           </div>
 
           <!-- Gender filter -->
+          <div class="ms-wrap" id="msw-gender">
+            <button class="ms-btn" onclick="toggleMsDropdown('ms-gender')">
+              <span id="ms-gender-label">All Genders</span> ▾
+            </button>
+            <div class="ms-dropdown" id="ms-gender" style="display:none;">
+              <label class="ms-item"><input type="checkbox" value="Male"   onchange="filterStudentsTable()"> 👦 Male</label>
+              <label class="ms-item"><input type="checkbox" value="Female" onchange="filterStudentsTable()"> 👧 Female</label>
+              <label class="ms-item"><input type="checkbox" value="Other"  onchange="filterStudentsTable()"> 🧑 Other</label>
+            </div>
+          </div>
+
           <!-- Status filter — Pending excluded (handled in Pending Approvals tab) -->
           <div class="ms-wrap" id="msw-status">
             <button class="ms-btn" onclick="toggleMsDropdown('ms-status')">
@@ -6126,18 +6137,18 @@ function printStudentList() {
   const rows = students.map((s, i) => `
     <tr>
       <td>${i + 1}</td>
-      <td>${s.roll || '—'}</td>
-      <td>${s.name}</td>
-      <td>${s.session || '—'}</td>
       <td>${s.board || 'BSEB'}</td>
       <td>${getClassName(s.class)}</td>
+      <td>${s.roll || '—'}</td>
+      <td>${s.name}</td>
       <td>${s.gender || '—'}</td>
       <td>${s.dob || '—'}</td>
-      <td>${s.mobile}</td>
+      <td>${s.mobile || '—'}</td>
       <td>${s.altMobile || '—'}</td>
       <td>${s.father || '—'}</td>
       <td>${s.mother || '—'}</td>
       <td>${s.address || '—'}</td>
+      <td>${s.session || '—'}</td>
       <td>${s.status}</td>
     </tr>
   `).join('');
@@ -6177,10 +6188,10 @@ function printStudentList() {
   <table>
     <thead>
       <tr>
-        <th>#</th><th>Roll</th><th>Full Name</th><th>Session</th>
-        <th>Board</th><th>Class</th><th>Gender</th><th>DOB</th>
+        <th>#</th><th>Board</th><th>Class</th><th>Roll</th>
+        <th>Full Name</th><th>Gender</th><th>DOB</th>
         <th>Mobile</th><th>Alt. Mobile</th><th>Father's Name</th>
-        <th>Mother's Name</th><th>Address</th><th>Status</th>
+        <th>Mother's Name</th><th>Address</th><th>Session</th><th>Status</th>
       </tr>
     </thead>
     <tbody>${rows}</tbody>
@@ -6249,12 +6260,14 @@ function filterStudentsTable() {
   const boards  = getMsValues('ms-board');
   const sessions= getMsValues('ms-session');
   const classes = getMsValues('ms-class');
+  const genders = getMsValues('ms-gender');
   const statuses= getMsValues('ms-status');
 
   // Update all button labels
   updateMsLabel('ms-board-label',   'All Boards',   boards);
   updateMsLabel('ms-session-label', 'All Sessions', sessions);
   updateMsLabel('ms-class-label',   'All Classes',  classes.map(c => getClassName(c)));
+  updateMsLabel('ms-gender-label',  'All Genders',  genders);
   updateMsLabel('ms-status-label',  'All Status',   statuses);
 
   const filtered = window._allStudents.filter(s => {
@@ -6262,8 +6275,9 @@ function filterStudentsTable() {
     const matchB  = boards.length   === 0 || boards.includes(s.board || 'BSEB');
     const matchSe = sessions.length === 0 || sessions.includes(s.session);
     const matchC  = classes.length  === 0 || classes.includes(s.class);
+    const matchG  = genders.length  === 0 || genders.includes(s.gender);
     const matchSt = statuses.length === 0 || statuses.includes(s.status);
-    return matchQ && matchB && matchSe && matchC && matchSt;
+    return matchQ && matchB && matchSe && matchC && matchG && matchSt;
   });
 
   renderStudentsTable(filtered);
