@@ -1518,6 +1518,18 @@ function showPage(pageId, addHistory = true) {
   if (navItem) navItem.classList.add('active');
   document.querySelector('.sidebar')?.classList.remove('mobile-open');
 
+  // Re-apply saved logo + institute data to homepage elements whenever
+  // returning to the public homepage (after logout or session expiry)
+  if (pageId === 'page-home') {
+    if (window._instituteData && window._instituteData.logo) {
+      // Data already in memory — apply instantly, no Firestore call needed
+      applyLogoToSidebars(window._instituteData.logo);
+    } else {
+      // Not yet loaded — fetch from Firestore
+      loadInstituteInfo();
+    }
+  }
+
   if (addHistory) {
     history.pushState({ page: pageId, area: 'public' }, '', `#${pageId}`);
   }
@@ -4800,25 +4812,13 @@ function buildAdminDashboardHTML() {
           </div>
 
           <!-- Gender filter -->
-          <div class="ms-wrap" id="msw-gender">
-            <button class="ms-btn" onclick="toggleMsDropdown('ms-gender')">
-              <span id="ms-gender-label">All Genders</span> ▾
-            </button>
-            <div class="ms-dropdown" id="ms-gender" style="display:none;">
-              <label class="ms-item"><input type="checkbox" value="Male"   onchange="filterStudentsTable()"> 👦 Male</label>
-              <label class="ms-item"><input type="checkbox" value="Female" onchange="filterStudentsTable()"> 👧 Female</label>
-              <label class="ms-item"><input type="checkbox" value="Other"  onchange="filterStudentsTable()"> 🧑 Other</label>
-            </div>
-          </div>
-
-          <!-- Status filter -->
+          <!-- Status filter — Pending excluded (handled in Pending Approvals tab) -->
           <div class="ms-wrap" id="msw-status">
             <button class="ms-btn" onclick="toggleMsDropdown('ms-status')">
               <span id="ms-status-label">All Status</span> ▾
             </button>
             <div class="ms-dropdown" id="ms-status" style="display:none;">
               <label class="ms-item"><input type="checkbox" value="approved" onchange="filterStudentsTable()"> ✅ Active</label>
-              <label class="ms-item"><input type="checkbox" value="pending"  onchange="filterStudentsTable()"> ⏳ Pending</label>
               <label class="ms-item"><input type="checkbox" value="inactive" onchange="filterStudentsTable()"> ⛔ Inactive</label>
               <label class="ms-item"><input type="checkbox" value="rejected" onchange="filterStudentsTable()"> ❌ Rejected</label>
             </div>
@@ -4831,13 +4831,12 @@ function buildAdminDashboardHTML() {
           <table>
             <thead>
               <tr>
-                <th>Name</th>
-                <th>Mobile</th>
-                <th>Session</th>
-                <th>Board</th>
                 <th>Class</th>
                 <th>Roll No</th>
-                <th>Gender</th>
+                <th>Name</th>
+                <th>Mobile</th>
+                <th>Board</th>
+                <th>Session</th>
                 <th>Registered</th>
                 <th>Status</th>
                 <th>Actions</th>
@@ -5790,11 +5789,10 @@ async function loadAllStudents() {
       .orderBy('createdAt', 'desc')
       .get();
 
-    // Store all students for client-side filtering
-    window._allStudents = snap.docs.map(doc => ({
-      id: doc.id,
-      ...doc.data()
-    }));
+    // Store only approved students (pending go to Pending Approvals tab)
+    window._allStudents = snap.docs
+      .map(doc => ({ id: doc.id, ...doc.data() }))
+      .filter(s => s.status !== 'pending');
 
     renderStudentsTable(window._allStudents);
     loadClassFilterDropdown();
@@ -5828,7 +5826,7 @@ function renderStudentsTable(students) {
   if (!tbody) return;
 
   if (students.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="10" style="text-align:center;
+    tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;
       padding:32px; color:var(--text-muted);">No students found.</td></tr>`;
     return;
   }
@@ -5840,60 +5838,81 @@ function renderStudentsTable(students) {
     rejected: '<span class="badge badge-red">❌ Rejected</span>',
   };
 
-  tbody.innerHTML = students.map(s => `
+  tbody.innerHTML = students.map(s => {
+    // Build 3-dot dropdown items based on status
+    let dropdownItems = `
+      <div class="std-action-item" onclick="closeAllStudentDropdowns(); openEditStudentModal('${s.id}')">
+        ✏️ Edit
+      </div>`;
+
+    if (s.status === 'pending') {
+      dropdownItems += `
+      <div class="std-action-item std-action-success" onclick="closeAllStudentDropdowns(); approveStudent('${s.id}')">
+        ✅ Approve
+      </div>
+      <div class="std-action-item std-action-danger" onclick="closeAllStudentDropdowns(); rejectStudent('${s.id}','${s.name.replace(/'/g,"\\'")}')">
+        ❌ Reject
+      </div>`;
+    }
+    if (s.status === 'approved') {
+      dropdownItems += `
+      <div class="std-action-item std-action-warning" onclick="closeAllStudentDropdowns(); deactivateStudent('${s.id}','${s.name.replace(/'/g,"\\'")}')">
+        ⛔ Deactivate
+      </div>`;
+    }
+    if (s.status === 'inactive') {
+      dropdownItems += `
+      <div class="std-action-item std-action-success" onclick="closeAllStudentDropdowns(); reactivateStudent('${s.id}')">
+        ✅ Activate
+      </div>`;
+    }
+    dropdownItems += `
+      <div class="std-action-divider"></div>
+      <div class="std-action-item std-action-danger" onclick="closeAllStudentDropdowns(); deleteStudent('${s.id}','${s.name.replace(/'/g,"\\'")}')">
+        🗑️ Delete
+      </div>`;
+
+    return `
     <tr>
+      <td><span class="badge badge-blue">${getClassName(s.class)}</span></td>
+      <td style="font-weight:600;text-align:center;">${s.roll || '—'}</td>
       <td>
         <div style="display:flex;align-items:center;gap:8px;">
-          ${s.photo ? `<img src="${s.photo}" style="width:32px;height:32px;border-radius:50%;object-fit:cover;flex-shrink:0;">` : `<div style="width:32px;height:32px;border-radius:50%;background:var(--bg-card2);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;">👤</div>`}
-          <div><strong>${s.name}</strong><div style="font-size:var(--fs-xs);color:var(--text-dim);">${s.father ? 'S/O '+s.father : s.mobile}</div></div>
+          ${s.photo
+            ? `<img src="${s.photo}" style="width:32px;height:32px;border-radius:50%;object-fit:cover;flex-shrink:0;">`
+            : `<div style="width:32px;height:32px;border-radius:50%;background:var(--bg-card2);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;">👤</div>`}
+          <div>
+            <strong>${s.name}</strong>
+            <div style="font-size:var(--fs-xs);color:var(--text-dim);">${s.father ? 'S/O '+s.father : ''}</div>
+          </div>
         </div>
       </td>
-      <td>${s.mobile}</td>
-      <td><span class="badge badge-blue" style="font-size:10px;">${s.session || '—'}</span></td>
+      <td>${s.mobile || '—'}</td>
       <td>
         <span class="badge ${(s.board||'BSEB')==='CBSE' ? 'badge-green' : 'badge-blue'}" style="font-size:10px;">
           ${(s.board||'BSEB')==='CBSE' ? '📗 CBSE' : '📘 BSEB'}
         </span>
       </td>
-      <td><span class="badge badge-blue">${getClassName(s.class)}</span></td>
-      <td style="font-weight:600;">${s.roll || '—'}</td>
-      <td>${s.gender || '—'}</td>
-      <td>${formatDate(s.createdAt)}</td>
+      <td><span class="badge badge-blue" style="font-size:10px;">${s.session || '—'}</span></td>
+      <td style="font-size:var(--fs-xs);color:var(--text-dim);">${formatDate(s.createdAt)}</td>
       <td>${statusBadge[s.status] || statusBadge.pending}</td>
       <td>
-        <div style="display:flex; gap:6px; flex-wrap:wrap;" class="action-btns">
-          <button class="btn btn-ghost btn-sm"
-                  onclick="viewStudentDetails('${s.id}')">
+        <div style="display:flex;align-items:center;gap:6px;">
+          <button class="btn btn-ghost btn-sm" onclick="viewStudentDetails('${s.id}')">
             👁️ View
           </button>
-          <button class="btn btn-outline btn-sm"
-                  onclick="openEditStudentModal('${s.id}')">
-            ✏️ Edit
-          </button>
-          ${s.status === 'pending' ? `
-            <button class="btn btn-success btn-sm"
-                    onclick="approveStudent('${s.id}')">✅</button>
-            <button class="btn btn-danger btn-sm"
-                    onclick="rejectStudent('${s.id}','${s.name.replace(/'/g,"\\'")}')">❌</button>
-          ` : ''}
-          ${s.status === 'approved' ? `
-            <button class="btn btn-warning btn-sm"
-                    onclick="deactivateStudent('${s.id}','${s.name.replace(/'/g,"\\'")}')">
-              ⛔ Deactivate
-            </button>` : ''}
-          ${s.status === 'inactive' ? `
-            <button class="btn btn-success btn-sm"
-                    onclick="reactivateStudent('${s.id}')">
-              ✅ Activate
-            </button>` : ''}
-          <button class="btn btn-danger btn-sm"
-                  onclick="deleteStudent('${s.id}','${s.name.replace(/'/g,"\\'")}')">
-            🗑️
-          </button>
+          <div class="std-action-wrap" style="position:relative;">
+            <button class="btn btn-ghost btn-sm std-dot-btn"
+                    onclick="toggleStudentDropdown(event,'dd-${s.id}')"
+                    title="More actions">⋮</button>
+            <div id="dd-${s.id}" class="std-action-dropdown" style="display:none;">
+              ${dropdownItems}
+            </div>
+          </div>
         </div>
       </td>
-    </tr>
-  `).join('');
+    </tr>`;
+  }).join('');
 }
 
 
@@ -6232,14 +6251,12 @@ function filterStudentsTable() {
   const boards  = getMsValues('ms-board');
   const sessions= getMsValues('ms-session');
   const classes = getMsValues('ms-class');
-  const genders = getMsValues('ms-gender');
   const statuses= getMsValues('ms-status');
 
   // Update all button labels
   updateMsLabel('ms-board-label',   'All Boards',   boards);
   updateMsLabel('ms-session-label', 'All Sessions', sessions);
   updateMsLabel('ms-class-label',   'All Classes',  classes.map(c => getClassName(c)));
-  updateMsLabel('ms-gender-label',  'All Genders',  genders);
   updateMsLabel('ms-status-label',  'All Status',   statuses);
 
   const filtered = window._allStudents.filter(s => {
@@ -6247,9 +6264,8 @@ function filterStudentsTable() {
     const matchB  = boards.length   === 0 || boards.includes(s.board || 'BSEB');
     const matchSe = sessions.length === 0 || sessions.includes(s.session);
     const matchC  = classes.length  === 0 || classes.includes(s.class);
-    const matchG  = genders.length  === 0 || genders.includes(s.gender);
     const matchSt = statuses.length === 0 || statuses.includes(s.status);
-    return matchQ && matchB && matchSe && matchC && matchG && matchSt;
+    return matchQ && matchB && matchSe && matchC && matchSt;
   });
 
   renderStudentsTable(filtered);
@@ -6329,6 +6345,21 @@ async function loadClassFilterDropdown() {
 // =============================================================
 // VIEW STUDENT DETAILS (popup modal)
 // =============================================================
+// 3-dot dropdown helpers for All Students table
+function toggleStudentDropdown(e, id) {
+  e.stopPropagation();
+  const dd = document.getElementById(id);
+  if (!dd) return;
+  const isOpen = dd.style.display === 'block';
+  closeAllStudentDropdowns();
+  if (!isOpen) dd.style.display = 'block';
+}
+function closeAllStudentDropdowns() {
+  document.querySelectorAll('.std-action-dropdown').forEach(d => d.style.display = 'none');
+}
+// Close dropdown when clicking anywhere else
+document.addEventListener('click', closeAllStudentDropdowns);
+
 function viewStudentDetails(mobile) {
   const student = window._allStudents?.find(s => s.id === mobile);
   if (!student) return;
@@ -9561,6 +9592,51 @@ console.log('🌐 Then deploy to Netlify for free hosting');
 </div>
 
 <style>
+/* ── Student table 3-dot action dropdown ── */
+.std-dot-btn {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  padding: 4px 10px !important;
+  line-height: 1;
+  color: var(--text-muted);
+}
+.std-dot-btn:hover { color: var(--text-white); background: var(--bg-card2); }
+.std-action-dropdown {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  min-width: 150px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  z-index: 999;
+  overflow: hidden;
+  animation: fadeInDown 0.12s ease;
+}
+.std-action-item {
+  padding: 10px 16px;
+  font-size: var(--fs-sm);
+  color: var(--text-white);
+  cursor: pointer;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+.std-action-item:hover         { background: var(--bg-card2); }
+.std-action-item.std-action-success { color: var(--success); }
+.std-action-item.std-action-warning { color: var(--warning); }
+.std-action-item.std-action-danger  { color: var(--danger);  }
+.std-action-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 0;
+}
+@keyframes fadeInDown {
+  from { opacity:0; transform:translateY(-6px); }
+  to   { opacity:1; transform:translateY(0);    }
+}
+
 @keyframes swPulse {
   0%, 100% { box-shadow: 0 0 20px rgba(255,180,0,0.25); transform: scale(1); }
   50%       { box-shadow: 0 0 32px rgba(255,180,0,0.5);  transform: scale(1.06); }
