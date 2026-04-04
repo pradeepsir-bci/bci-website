@@ -231,6 +231,7 @@ body {
   color: var(--text-white);
   min-height: 100vh;
   overflow-x: hidden;
+  max-width: 100vw;
   /* Subtle grid background pattern */
   background-image:
     linear-gradient(rgba(0,212,255,0.03) 1px, transparent 1px),
@@ -445,6 +446,8 @@ code {
   border-radius: var(--radius-lg);
   padding: 24px;
   transition: border-color 0.2s;
+  box-sizing: border-box;
+  max-width: 100%;
 }
 .card:hover {
   border-color: var(--border-bright);
@@ -743,7 +746,7 @@ tbody td {
   left: 0;
   height: 100vh;
   overflow-y: auto;
-  z-index: 100;
+  z-index: 160;   /* above backdrop (150) and below hamburger btn (300) */
   display: flex;
   flex-direction: column;
   transition: transform 0.3s ease;
@@ -855,6 +858,9 @@ tbody td {
   flex: 1;
   padding: 28px 32px;
   min-height: 100vh;
+  box-sizing: border-box;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 /* =============================================================
@@ -891,7 +897,7 @@ tbody td {
    ============================================================= */
 .stats-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 16px;
   margin-bottom: 24px;
 }
@@ -1260,32 +1266,44 @@ tbody td {
   /* ── Layout ── */
   .contact-grid-2col { grid-template-columns: 1fr !important; }
   .sidebar {
-    transform: translateX(-260px);
-    width: 260px;
+    transform: translateX(-280px);  /* must equal width so nothing bleeds */
+    width: 280px;
   }
   .sidebar.mobile-open {
     transform: translateX(0);
+    box-shadow: 4px 0 24px rgba(0,0,0,0.6);
   }
   .main-content {
-    margin-left: 0;
-    padding: 16px;
+    margin-left: 0 !important;
+    padding: 12px !important;
+    padding-top: 74px !important; /* clear the fixed hamburger button */
+    width: 100% !important;
+    max-width: 100vw !important;
+    box-sizing: border-box !important;
+    overflow-x: hidden !important;
   }
 
   /* ── Mobile menu button ── */
   .mobile-menu-btn {
     display: flex !important;
     position: fixed;
-    top: 12px; left: 12px;
-    z-index: 200;
-    width: 48px; height: 48px; /* increased to 48px for easier tapping */
+    top: 14px; left: 14px;
+    z-index: 300;           /* above sidebar AND backdrop */
+    width: 46px; height: 46px;
     background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-bright);
+    border-radius: 10px;
     align-items: center;
     justify-content: center;
     cursor: pointer;
     font-size: 20px;
     color: var(--text-white);
+    box-shadow: 0 2px 12px rgba(0,0,0,0.4);
+    -webkit-tap-highlight-color: transparent;
+  }
+  .mobile-menu-btn:active {
+    background: var(--bg-card2);
+    transform: scale(0.94);
   }
 
   /* ── Forms ── */
@@ -1344,6 +1362,192 @@ tbody td {
 
   /* ── Notice footer ── */
   .notice-footer { flex-wrap: wrap; gap: 6px; }
+  
+  /* ⚠️ FIX 2: Enhanced mobile-friendly UI for student panel ── */
+  
+  /* Recently added materials cards */
+  #s-recent-materials .file-card,
+  #s-recent-materials > div > div {
+    min-height: 100px;
+    font-size: 14px;
+  }
+  
+  /* File list items - better spacing */
+  .file-list-item {
+    padding: 14px !important;
+    gap: 12px !important;
+  }
+  
+  /* Folder items - larger tap targets */
+  .folder-item {
+    min-height: 120px;
+    padding: 16px !important;
+  }
+  .folder-name {
+    font-size: 15px !important;
+    line-height: 1.3;
+  }
+  
+  /* Student dashboard cards */
+  .card {
+    padding: 16px;
+  }
+  .card-title {
+    font-size: 16px !important;
+  }
+  
+  /* Breadcrumb navigation - better spacing */
+  .breadcrumb-item {
+    font-size: 13px !important;
+    padding: 8px 12px !important;
+  }
+  
+  /* Notice board on student dashboard */
+  .notice-card {
+    padding: 14px !important;
+  }
+  .notice-title {
+    font-size: 15px !important;
+  }
+  
+  /* Bottom nav icons - larger */
+  .nav-icon {
+    font-size: 20px !important;
+  }
+  
+  /* Student profile - better readability */
+  .s-profile-grid {
+    gap: 14px !important;
+  }
+  
+  /* Search bars */
+  .form-control[type="search"],
+  input[placeholder*="Search"] {
+    font-size: 16px !important; /* Prevents iOS zoom */
+    min-height: 44px;
+  }
+  
+  /* Material type badges */
+  .badge {
+    font-size: 11px !important;
+    padding: 5px 10px !important;
+  }
+
+  /* ── Android-specific improvements ── */
+
+  /* Prevent input zoom on Android Chrome */
+  input, select, textarea {
+    font-size: 16px !important;
+  }
+
+  /* Welcome banner — prevent overflow on small screens */
+  #s-page-home > div:first-child {
+    padding: 20px 16px !important;
+  }
+  #s-page-home h1 {
+    font-size: 22px !important;
+    word-break: break-word;
+  }
+
+  /* Stats grid — 2x2 on Android */
+  #s-stats-grid {
+    grid-template-columns: 1fr 1fr !important;
+    gap: 10px !important;
+  }
+  .stat-card {
+    padding: 14px 10px !important;
+  }
+  .stat-card-value {
+    font-size: 22px !important;
+  }
+
+  /* File items — ensure text doesn't overflow */
+  .file-title {
+    font-size: 13px !important;
+    white-space: normal !important;
+    word-break: break-word;
+    overflow: visible !important;
+  }
+  .file-item {
+    padding: 12px 12px !important;
+    gap: 10px !important;
+  }
+  .file-actions .btn {
+    padding: 8px 10px !important;
+    font-size: 12px !important;
+  }
+
+  /* Breadcrumb — horizontal scroll on small screens */
+  .breadcrumb {
+    overflow-x: auto !important;
+    flex-wrap: nowrap !important;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 6px !important;
+  }
+
+  /* Folder grid — 2 cols on Android */
+  .folder-grid {
+    grid-template-columns: 1fr 1fr !important;
+    gap: 10px !important;
+  }
+  .folder-item {
+    padding: 14px 10px !important;
+    min-height: 90px !important;
+  }
+
+  /* Modal full-width on Android */
+  .modal-overlay .modal {
+    margin: 8px !important;
+    max-height: 88vh !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Card padding reduction for small screens */
+  .card {
+    padding: 14px !important;
+  }
+
+  /* Nav items — easier to tap */
+  .nav-item {
+    padding: 13px 16px !important;
+    font-size: 14px !important;
+  }
+
+  /* Recent materials notification cards */
+  #s-recent-materials > div > div[onclick] {
+    padding: 12px 14px !important;
+  }
+
+  /* Page header */
+  .page-header h1 {
+    font-size: 20px !important;
+  }
+  .page-header p {
+    font-size: 13px !important;
+  }
+
+  /* Sidebar width already set to 280px in the mobile sidebar rule above */
+
+  /* ── Nuclear overflow fix — nothing should scroll horizontally ── */
+  html, body {
+    overflow-x: hidden !important;
+    max-width: 100vw !important;
+  }
+  .page, .card, .modal, .stat-card,
+  .file-item, .folder-item, .notice-item {
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+  }
+  /* Inline-style paddings that were hardcoded for desktop */
+  [style*="padding: 28px 32px"],
+  [style*="padding:28px 32px"] {
+    padding: 18px 16px !important;
+  }
+  [style*="padding: 32px"],
+  [style*="padding:32px"] {
+    padding: 16px !important;
+  }
 }
 .mobile-menu-btn { display: none; }
 
@@ -1401,6 +1605,47 @@ tbody td {
 .page { display: none; }
 .page.active { display: block; animation: fadeIn 0.3s ease; }
 
+/* ⚠️ FIX 5: Toggle Switch for Profile Edit Permission */
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 52px;
+  height: 28px;
+}
+.switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background-color: var(--bg-card2);
+  border: 1.5px solid var(--border);
+  transition: 0.3s;
+  border-radius: 28px;
+}
+.slider:before {
+  position: absolute;
+  content: "";
+  height: 20px;
+  width: 20px;
+  left: 3px;
+  bottom: 2.5px;
+  background-color: var(--text-muted);
+  transition: 0.3s;
+  border-radius: 50%;
+}
+input:checked + .slider {
+  background-color: rgba(0, 255, 136, 0.15);
+  border-color: var(--success);
+}
+input:checked + .slider:before {
+  transform: translateX(24px);
+  background-color: var(--success);
+}
+
 </style>
 </head>
 <body>
@@ -1415,6 +1660,13 @@ tbody td {
      MOBILE MENU BUTTON (visible only on small screens)
      ============================================================= -->
 <button class="mobile-menu-btn" id="mobileMenuBtn" onclick="toggleMobileSidebar()">☰</button>
+
+<!-- Sidebar backdrop overlay (mobile only) -->
+<div id="sidebar-backdrop" onclick="closeMobileSidebar()" style="
+  display:none; position:fixed; inset:0; z-index:150;
+  background:rgba(0,0,0,0.5);
+  opacity:0; transition: opacity 0.25s ease;
+"></div>
 
 <!-- =============================================================
      FIREBASE CONFIGURATION
@@ -1518,6 +1770,7 @@ function showPage(pageId, addHistory = true) {
   const navItem = document.querySelector(`.nav-item[data-page="${pageId}"]`);
   if (navItem) navItem.classList.add('active');
   document.querySelector('.sidebar')?.classList.remove('mobile-open');
+  const bd0=document.getElementById('sidebar-backdrop'); if(bd0) bd0.style.display='none';
 
   // Always hide dashboard-area when navigating to a public page.
   // This prevents the blueish dashboard background showing behind the homepage
@@ -1571,13 +1824,25 @@ window.addEventListener('popstate', (e) => {
     return;
   }
 
-  const { page, area } = state;
+  const { page, area, folderId, breadcrumbs } = state;
 
   if (area === 'student') {
     showStudentPage(page, false);
-    // Reload data for the page being navigated back to
+    
+    // ⚠️ FIX 4: Restore folder state when navigating back
+    if (page === 's-page-materials') {
+      if (breadcrumbs !== undefined) {
+        AppState.breadcrumbs = breadcrumbs || [];
+        AppState.currentFolderId = folderId || null;
+        updateStudentBreadcrumb();
+        loadStudentFolders(folderId || null);
+      } else {
+        loadStudentFolders();
+      }
+    }
+    
+    // Reload data for other pages
     if (page === 's-page-notices') loadStudentNotices();
-    if (page === 's-page-materials') loadStudentFolders();
   } else if (area === 'admin') {
     showAdminPage(page, false);
     // Reload data for the page being navigated back to
@@ -1668,7 +1933,29 @@ setInterval(checkAndAutoUnlock, 60000);
 // UTILITY: Mobile sidebar toggle
 // =============================================================
 function toggleMobileSidebar() {
-  document.querySelector('.sidebar')?.classList.toggle('mobile-open');
+  const sidebar = document.querySelector('.sidebar');
+  const backdrop = document.getElementById('sidebar-backdrop');
+  if (!sidebar) return;
+  const isOpen = sidebar.classList.toggle('mobile-open');
+  if (backdrop) {
+    if (isOpen) {
+      backdrop.style.display = 'block';
+      // Small delay so display:block renders before opacity transition
+      requestAnimationFrame(() => { backdrop.style.opacity = '1'; });
+    } else {
+      backdrop.style.opacity = '0';
+      setTimeout(() => { backdrop.style.display = 'none'; }, 250);
+    }
+  }
+}
+
+function closeMobileSidebar() {
+  document.querySelector('.sidebar')?.classList.remove('mobile-open');
+  const backdrop = document.getElementById('sidebar-backdrop');
+  if (backdrop) {
+    backdrop.style.opacity = '0';
+    setTimeout(() => { backdrop.style.display = 'none'; }, 250);
+  }
 }
 
 // =============================================================
@@ -2696,15 +2983,25 @@ function buildPageHTML() {
           <div class="form-group">
             <label>Photo <span class="optional">(optional)</span></label>
             <div style="display:flex; align-items:center; gap:16px;">
-              <div id="photo-preview" style="width:64px;height:64px;border-radius:50%;background:var(--bg-card2);border:2px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:28px;flex-shrink:0;">👤</div>
-              <div>
+              <div id="photo-preview" style="width:72px;height:72px;border-radius:50%;background:var(--bg-card2);
+                   border:2px solid var(--border);display:flex;align-items:center;
+                   justify-content:center;font-size:30px;flex-shrink:0;overflow:hidden;">👤</div>
+              <div style="flex:1;">
+                <!-- Gallery input -->
                 <input type="file" id="reg-photo" accept="image/*" onchange="previewPhoto(this)" style="display:none;">
-                <div style="display:flex; gap:8px; flex-wrap:wrap;">
-                  <button type="button" onclick="document.getElementById('reg-photo').click()" class="btn btn-outline btn-sm">📷 Upload Photo</button>
+                <!-- Camera input — opens camera directly on Android -->
+                <input type="file" id="reg-photo-camera" accept="image/*" capture="user"
+                       onchange="previewPhoto(this)" style="display:none;">
+                <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:6px;">
+                  <button type="button" onclick="document.getElementById('reg-photo').click()"
+                          class="btn btn-outline btn-sm" style="font-size:12px;">🖼️ Gallery</button>
+                  <button type="button" onclick="document.getElementById('reg-photo-camera').click()"
+                          class="btn btn-outline btn-sm" style="font-size:12px;">📸 Camera</button>
                   <button type="button" id="reg-photo-remove-btn" onclick="removeRegPhoto()"
-                          class="btn btn-ghost btn-sm" style="display:none;">🗑️ Remove</button>
+                          class="btn btn-ghost btn-sm"
+                          style="display:none;font-size:12px;color:var(--danger);">🗑️ Remove</button>
                 </div>
-                <div style="font-size:var(--fs-xs);color:var(--text-dim);margin-top:4px;">JPG/PNG, max 3MB. Default photo used if not uploaded.</div>
+                <div style="font-size:11px;color:var(--text-dim);">JPG/PNG, max 3MB. Optional.</div>
               </div>
             </div>
           </div>
@@ -3128,8 +3425,10 @@ async function submitRegistrationConfirmed() {
       mobile: data.mobile,
       altMobile: data.altMobile || '',
       password: data.password,
-      father: data.father,
-      mother: data.mother,
+      father: data.father,        // legacy key
+      mother: data.mother,        // legacy key
+      fatherName: data.father,    // normalized key used by profile
+      motherName: data.mother,    // normalized key used by profile
       address: data.address,
       photo: photoData || '',
       status: 'pending',
@@ -3179,8 +3478,7 @@ function resetRegForm() {
   });
   const photoPreview = document.getElementById('photo-preview');
   if (photoPreview) photoPreview.innerHTML = '👤';
-  const photoInput = document.getElementById('reg-photo');
-  if (photoInput) photoInput.value = '';
+  ['reg-photo','reg-photo-camera'].forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
   window._regPhotoCompressed = null;
   const regRemoveBtn = document.getElementById('reg-photo-remove-btn');
   if (regRemoveBtn) regRemoveBtn.style.display = 'none';
@@ -3245,8 +3543,9 @@ function removeRegPhoto() {
   window._regPhotoCompressed = null;
   const preview = document.getElementById('photo-preview');
   if (preview) { preview.innerHTML = '👤'; }
-  const input = document.getElementById('reg-photo');
-  if (input) input.value = '';
+  ['reg-photo','reg-photo-camera'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
   const removeBtn = document.getElementById('reg-photo-remove-btn');
   if (removeBtn) removeBtn.style.display = 'none';
 }
@@ -3283,13 +3582,19 @@ function showBilingualPopup(title, en, hi, onOk) {
                 line-height:1.6; margin-bottom:12px;">${en}</p>
       <p style="color:var(--text-muted); font-size:var(--fs-sm);
                 line-height:1.6; margin-bottom:24px;">${hi}</p>
-      <button onclick="document.getElementById('bilingual-popup').remove(); (${onOk.toString()})();"
+      <button id="bilingual-popup-ok-btn"
               class="btn btn-primary" style="min-width:120px;">
         OK
       </button>
     </div>
   `;
   document.body.appendChild(popup);
+
+  // Attach OK handler safely — works whether onOk is a function or null
+  document.getElementById('bilingual-popup-ok-btn').addEventListener('click', () => {
+    popup.remove();
+    if (typeof onOk === 'function') onOk();
+  });
 }
 
 // =============================================================
@@ -3638,7 +3943,7 @@ function buildStudentDashboardHTML() {
        ID: dashboard-area
        Contains sidebar + all student pages
        ===================================================== -->
-  <div id="dashboard-area" style="display:none;">
+  <div id="dashboard-area" style="display:none; max-width:100%; overflow-x:hidden;">
   <div class="app-layout">
 
     <!-- ── SIDEBAR ── -->
@@ -3730,6 +4035,7 @@ function buildStudentDashboardHTML() {
           padding: 28px 32px;
           margin-bottom: 24px;
           position: relative; overflow: hidden;
+          box-sizing: border-box; max-width: 100%;
         ">
           <!-- Glow effect -->
           <div style="
@@ -3870,13 +4176,27 @@ function buildStudentDashboardHTML() {
 
           <!-- Profile details card -->
           <div class="card">
-            <div class="card-title">📋 My <span>Details</span></div>
+            <div class="card-title" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+              <span>📋 My <span>Details</span></span>
+              <button class="btn btn-outline btn-sm" onclick="openEditProfileModal()" id="edit-profile-btn">
+                ✏️ Edit Profile
+              </button>
+            </div>
             <!-- Photo display -->
             <div style="display:flex; align-items:center; gap:14px; margin-bottom:18px;
                         padding-bottom:16px; border-bottom:1px solid var(--border);">
               <div style="flex-shrink:0;">
                 ${student.photo
-                  ? `<img src="${student.photo}" style="width:72px;height:72px;border-radius:50%;object-fit:cover;border:2px solid var(--neon-blue);box-shadow:0 0 10px #00d4ff33;">`
+                  ? `<img id="edit-photo-img" src="${student.photo}"
+                          onclick="viewProfilePhotoFullscreen()"
+                          style="width:80px;height:80px;border-radius:50%;object-fit:cover;
+                                 border:2px solid var(--neon-blue);box-shadow:0 0 10px #00d4ff33;
+                                 cursor:pointer;display:block;" title="Tap to view full screen">
+                       <div onclick="viewProfilePhotoFullscreen()"
+                            style="font-size:10px;color:var(--neon-blue);text-align:center;
+                                   margin-top:4px;cursor:pointer;letter-spacing:0.5px;">
+                         👁 View
+                       </div>`
                   : `<div style="width:72px;height:72px;border-radius:50%;background:var(--bg-card2);border:2px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:30px;">👤</div>`}
               </div>
               <div>
@@ -3896,8 +4216,8 @@ function buildStudentDashboardHTML() {
                 { icon:'🎂', label:'Date of Birth', val: student.dob || '—' },
                 { icon:'📱', label:'Mobile Number', val: student.mobile },
                 { icon:'📱', label:'Alt. Mobile',   val: student.altMobile || 'Not provided' },
-                { icon:'👨', label:"Father's Name", val: student.father || '—' },
-                { icon:'👩', label:"Mother's Name", val: student.mother || '—' },
+                { icon:'👨', label:"Father's Name", val: student.fatherName || student.father || '—' },
+                { icon:'👩', label:"Mother's Name", val: student.motherName || student.mother || '—' },
                 { icon:'📍', label:'Address',       val: student.address || '—' },
               ].map(item => `
                 <div style="display:flex; gap:12px; align-items:flex-start;
@@ -3971,6 +4291,7 @@ function showStudentPage(pageId, addHistory = true) {
   });
 
   document.getElementById('student-sidebar')?.classList.remove('mobile-open');
+  const bd2=document.getElementById('sidebar-backdrop'); if(bd2) bd2.style.display='none';
 
   if (addHistory) {
     history.pushState({ page: pageId, area: 'student' }, '', `#${pageId}`);
@@ -4199,8 +4520,8 @@ async function isFolderOrParentLocked(folderId) {
 
 // =============================================================
 // LOAD RECENTLY ADDED MATERIALS on home dashboard
-// Shows last 4 unlocked materials for this student's class
-// ⚠️ BUG FIX: Now also checks if parent folder is locked!
+// ⚠️ FIX 3: Shows last 3 materials as notifications (navigate to Study Materials)
+// ⚠️ BUG FIX: Also checks if parent folder is locked!
 // =============================================================
 async function loadStudentRecentMaterials() {
   const container = document.getElementById('s-recent-materials');
@@ -4211,8 +4532,6 @@ async function loadStudentRecentMaterials() {
   container.innerHTML = '<div class="loading-screen"><div class="spinner"></div><p>Loading materials...</p></div>';
   
   try {
-    // No orderBy here — avoids needing a composite index
-    // We sort by createdAt in JS after fetching
     const snap = await db.collection('materials')
       .where('classId', '==', classId)
       .where('isLocked', '==', false)
@@ -4230,11 +4549,8 @@ async function loadStudentRecentMaterials() {
       return;
     }
 
-    // ⚠️ BUG FIX: Filter out files whose parent folder is locked
-    // First map to objects
+    // Filter out files whose parent folder is locked
     const allMaterials = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    
-    // Check each material's parent folder status
     const visibleMaterials = [];
     for (const material of allMaterials) {
       const parentLocked = await isFolderOrParentLocked(material.folderId);
@@ -4243,7 +4559,6 @@ async function loadStudentRecentMaterials() {
       }
     }
     
-    // If no visible materials after filtering
     if (visibleMaterials.length === 0) {
       container.innerHTML = `
         <div style="padding:24px; text-align:center; color:var(--text-muted);">
@@ -4256,18 +4571,62 @@ async function loadStudentRecentMaterials() {
       return;
     }
     
-    // Sort by createdAt descending, take latest 4
+    // ⚠️ FIX 3: Sort and take latest 3 only
     const sorted = visibleMaterials
       .sort((a, b) => {
         const aTime = a.createdAt?.seconds || 0;
         const bTime = b.createdAt?.seconds || 0;
         return bTime - aTime;
       })
-      .slice(0, 4);
+      .slice(0, 3);
 
+    // ⚠️ FIX 3: Notification-style cards that navigate to Study Materials
+    const typeIcons = {
+      'Notes': '📝',
+      'Assignment': '📋',
+      'DPP': '📊',
+      'Paper': '📄',
+      'Syllabus': '📑'
+    };
+    
     container.innerHTML = `
-      <div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:14px;">
-        ${sorted.map(m => buildFileCardHTML(m.id, m)).join('')}
+      <div style="display:flex; flex-direction:column; gap:10px;">
+        ${sorted.map(m => `
+          <div onclick="showStudentPage('s-page-materials'); loadStudentFolders();" style="
+            padding:14px 16px;
+            background:var(--bg-card);
+            border:1px solid var(--border);
+            border-radius:var(--radius);
+            cursor:pointer;
+            transition:all 0.2s;
+            display:flex;
+            align-items:center;
+            gap:12px;
+          " onmouseenter="this.style.borderColor='var(--neon-blue)'; this.style.background='var(--bg-card2)';"
+             onmouseleave="this.style.borderColor='var(--border)'; this.style.background='var(--bg-card)';">
+            
+            <div style="font-size:24px; flex-shrink:0;">${typeIcons[m.type] || '📄'}</div>
+            
+            <div style="flex:1; min-width:0;">
+              <div style="font-weight:600; font-size:var(--fs-sm); margin-bottom:3px; color:var(--text-white); 
+                          white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">
+                ${m.title}
+              </div>
+              <div style="font-size:var(--fs-xs); color:var(--text-dim); display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                <span class="badge badge-blue" style="font-size:10px; padding:3px 8px;">${m.type || 'Material'}</span>
+                <span>📅 ${formatDate(m.createdAt)}</span>
+              </div>
+            </div>
+            
+            <div style="color:var(--neon-blue); font-size:var(--fs-xs); flex-shrink:0;">
+              View →
+            </div>
+          </div>
+        `).join('')}
+        
+        <button onclick="showStudentPage('s-page-materials'); loadStudentFolders();" class="btn btn-outline btn-sm" style="margin-top:4px;">
+          📚 View All Materials
+        </button>
       </div>`;
 
   } catch (err) {
@@ -4386,10 +4745,20 @@ async function loadStudentFolders(parentFolderId = null) {
 // =============================================================
 // NAVIGATE INTO A FOLDER (student)
 // Updates breadcrumb and loads folder contents
+// ⚠️ FIX 4: Now pushes to browser history for back button support
 // =============================================================
 function enterFolder(folderId, folderName) {
   // Add to breadcrumbs
   AppState.breadcrumbs.push({ id: folderId, name: folderName });
+  
+  // ⚠️ FIX 4: Push to browser history
+  history.pushState({ 
+    page: 's-page-materials', 
+    area: 'student',
+    folderId: folderId,
+    breadcrumbs: JSON.parse(JSON.stringify(AppState.breadcrumbs))
+  }, '', `#s-page-materials/folder/${folderId}`);
+  
   updateStudentBreadcrumb();
   loadStudentFolders(folderId);
 }
@@ -4398,10 +4767,20 @@ function enterFolder(folderId, folderName) {
 // =============================================================
 // NAVIGATE TO ROOT (student)
 // Resets breadcrumbs and goes back to class root
+// ⚠️ FIX 4: Now pushes to browser history
 // =============================================================
 function navigateToRoot() {
   AppState.breadcrumbs = [];
   AppState.currentFolderId = null;
+  
+  // ⚠️ FIX 4: Push to browser history
+  history.pushState({
+    page: 's-page-materials',
+    area: 'student',
+    folderId: null,
+    breadcrumbs: []
+  }, '', '#s-page-materials');
+  
   updateStudentBreadcrumb();
   loadStudentFolders(null);
 }
@@ -4410,11 +4789,21 @@ function navigateToRoot() {
 // =============================================================
 // NAVIGATE TO BREADCRUMB ITEM (student)
 // Go back to a specific level in the folder tree
+// ⚠️ FIX 4: Now pushes to browser history
 // =============================================================
 function navigateToBreadcrumb(index) {
   // Keep breadcrumbs up to and including this index
   AppState.breadcrumbs = AppState.breadcrumbs.slice(0, index + 1);
   const target = AppState.breadcrumbs[index];
+  
+  // ⚠️ FIX 4: Push to browser history
+  history.pushState({
+    page: 's-page-materials',
+    area: 'student',
+    folderId: target.id,
+    breadcrumbs: JSON.parse(JSON.stringify(AppState.breadcrumbs))
+  }, '', `#s-page-materials/folder/${target.id}`);
+  
   updateStudentBreadcrumb();
   loadStudentFolders(target.id);
 }
@@ -4584,7 +4973,8 @@ async function handleChangePassword() {
 
   try {
     // Update in Firebase
-    await db.collection('students').doc(AppState.currentUser.mobile).update({
+    const pwDocRef = AppState.currentUser.id || AppState.currentUser.mobile;
+    await db.collection('students').doc(pwDocRef).update({
       password: newPass
     });
     // Update local session
@@ -4619,6 +5009,450 @@ function showPassMsg(msg, type) {
        margin-bottom:14px;font-size:var(--fs-sm);color:var(--danger);`;
   // Auto hide after 4 seconds
   setTimeout(() => { if (el) el.style.display = 'none'; }, 4000);
+}
+
+
+// =============================================================
+// ⚠️ FIX 5: EDIT PROFILE - Open modal with current data
+// Checks admin permission first
+// =============================================================
+async function openEditProfileModal() {
+  try {
+    // Check if admin allows profile editing
+    const settingsDoc = await db.collection('admin').doc('settings').get();
+    const allowProfileEdit = settingsDoc.exists ? settingsDoc.data().allowProfileEdit !== false : true;
+    
+    if (!allowProfileEdit) {
+      showBilingualPopup(
+        '🔒 Profile Editing Disabled',
+        'Profile editing is currently disabled by admin.\nPlease contact the institute office to update your details.',
+        'प्रोफ़ाइल संपादन अभी एडमिन द्वारा बंद किया गया है।\nअपनी जानकारी बदलवाने के लिए संस्थान कार्यालय से संपर्क करें।',
+        null
+      );
+      return;
+    }
+    
+    const student = AppState.currentUser;
+    
+    const modalHTML = `
+      <div id="modal-edit-profile" class="modal-overlay">
+        <div class="modal" style="max-width:700px; max-height:90vh; overflow-y:auto;">
+          <div class="modal-header">
+            <h3 class="modal-title">✏️ Edit My Profile</h3>
+            <button class="btn btn-ghost btn-sm" onclick="closeModal('modal-edit-profile')" style="margin-left:auto;">✕</button>
+          </div>
+          <div class="modal-body">
+            <div class="info-box" style="margin-bottom:16px;">
+              ⚠️ Cannot change: Session, Board, Class, Roll. Contact admin for these.
+            </div>
+            <div id="edit-profile-msg"></div>
+
+            <div class="form-group">
+              <label>Profile Photo</label>
+              <div style="display:flex;align-items:center;gap:16px;">
+
+                <!-- Photo circle — tap to view fullscreen if photo exists -->
+                <div id="edit-photo-preview"
+                     onclick="viewProfilePhotoFullscreen()"
+                     style="width:88px;height:88px;border-radius:50%;
+                            background:var(--bg-card2);border:2px solid var(--border);
+                            overflow:hidden;flex-shrink:0;display:flex;
+                            align-items:center;justify-content:center;font-size:36px;
+                            cursor:${student.photo ? 'pointer' : 'default'};
+                            transition:border-color 0.2s;position:relative;">
+                  ${student.photo
+                    ? '<img id="edit-photo-img" src="' + student.photo + '" style="width:100%;height:100%;object-fit:cover;">' +
+                      '<div style="position:absolute;bottom:0;left:0;right:0;' +
+                      'background:rgba(0,0,0,0.45);font-size:10px;' +
+                      'color:#fff;text-align:center;padding:3px 0;' +
+                      'border-radius:0 0 50px 50px;">👁 View</div>'
+                    : '<span id="edit-photo-img" style="font-size:36px;">👤</span>'}
+                </div>
+
+                <div style="flex:1;">
+                  <!-- Hidden inputs: gallery + camera (separate for Android) -->
+                  <input type="file" id="edit-photo-gallery" accept="image/*"
+                         onchange="previewEditPhoto(this)" style="display:none;">
+                  <input type="file" id="edit-photo-camera" accept="image/*"
+                         capture="user" onchange="previewEditPhoto(this)" style="display:none;">
+
+                  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+                    <!-- Gallery button -->
+                    <button type="button"
+                            onclick="document.getElementById('edit-photo-gallery').click()"
+                            class="btn btn-outline btn-sm" style="font-size:12px;">
+                      🖼️ Gallery
+                    </button>
+                    <!-- Camera button (Android will open camera directly) -->
+                    <button type="button"
+                            onclick="document.getElementById('edit-photo-camera').click()"
+                            class="btn btn-outline btn-sm" style="font-size:12px;">
+                      📸 Camera
+                    </button>
+                    <!-- Remove button — only visible when photo exists -->
+                    <button type="button" id="edit-photo-remove-btn"
+                            onclick="removeEditPhoto()"
+                            class="btn btn-ghost btn-sm"
+                            style="display:${student.photo?'inline-flex':'none'};font-size:12px;color:var(--danger);">
+                      🗑️ Remove
+                    </button>
+                  </div>
+                  <div style="font-size:11px;color:var(--text-dim);">
+                    JPG/PNG · Max 3MB · Tap photo to view full screen
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <div class="form-group">
+              <label>Full Name <span class="required">*</span></label>
+              <input class="form-control" id="edit-name" value="${student.name||''}" placeholder="Full name">
+            </div>
+            
+            <div class="form-row">
+              <div class="form-group">
+                <label>Gender <span class="required">*</span></label>
+                <select class="form-control" id="edit-gender">
+                  <option value="">-- Select --</option>
+                  <option ${student.gender==='Male'?'selected':''}>Male</option>
+                  <option ${student.gender==='Female'?'selected':''}>Female</option>
+                  <option ${student.gender==='Other'?'selected':''}>Other</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Date of Birth <span class="required">*</span></label>
+                <input class="form-control" id="edit-dob" type="date" value="${student.dob||''}">
+              </div>
+            </div>
+            
+            <div class="form-group">
+              <label>📱 Mobile Number <span class="required">*</span></label>
+              <input class="form-control" id="edit-mobile" type="tel"
+                     value="${student.mobile}" maxlength="10" placeholder="10-digit number">
+
+            </div>
+
+            <div class="form-group">
+              <label>Alt. Mobile <span class="optional">(optional)</span></label>
+              <input class="form-control" id="edit-alt-mobile" type="tel" value="${student.altMobile||''}" maxlength="10" placeholder="10 digits">
+            </div>
+            
+            <div class="form-row">
+              <div class="form-group">
+                <label>Father's Name <span class="required">*</span></label>
+                <input class="form-control" id="edit-father" value="${student.fatherName||student.father||''}" placeholder="Father's name">
+              </div>
+              <div class="form-group">
+                <label>Mother's Name <span class="required">*</span></label>
+                <input class="form-control" id="edit-mother" value="${student.motherName||student.mother||''}" placeholder="Mother's name">
+              </div>
+            </div>
+            
+            <div class="form-group">
+              <label>Address <span class="required">*</span></label>
+              <textarea class="form-control" id="edit-address" rows="3" style="resize:vertical;" placeholder="Home address">${student.address||''}</textarea>
+            </div>
+          </div>
+          <div class="modal-footer" style="gap:10px;">
+            <button class="btn btn-ghost" onclick="closeModal('modal-edit-profile')">Cancel</button>
+            <button class="btn btn-primary" onclick="saveEditedProfile()">💾 Save</button>
+          </div>
+        </div>
+      </div>`;
+    
+    const existing = document.getElementById('modal-edit-profile');
+    if (existing) existing.remove();
+    document.body.insertAdjacentHTML('beforeend', modalHTML);
+    
+    window._originalPhotoURL = student.photo || null;
+    window._editPhotoFile = null;
+    window._editPhotoDeleted = false;
+    
+    openModal('modal-edit-profile');
+  } catch (err) {
+    console.error('Error opening edit modal:', err);
+    showBilingualPopup(
+        '⚠️ Error / त्रुटि',
+        'Could not open edit form. Please try again.',
+        'प्रोफ़ाइल फॉर्म नहीं खुल सका। कृपया दोबारा कोशिश करें।',
+        null
+      );
+  }
+}
+
+function previewEditPhoto(input) {
+  if (!input.files || !input.files[0]) return;
+  const file = input.files[0];
+  if (file.size > 3*1024*1024) { showToast('Photo too large! Max 3MB.', 'error'); input.value=''; return; }
+  if (!file.type.startsWith('image/')) { showToast('Please select an image file.', 'error'); input.value=''; return; }
+
+  // Compress then preview
+  compressPhoto(file).then(compressed => {
+    window._editPhotoCompressed = compressed;
+    window._editPhotoFile = file;
+    window._editPhotoDeleted = false;
+
+    const preview = document.getElementById('edit-photo-preview');
+    if (preview) {
+      preview.style.cursor = 'pointer';
+      preview.innerHTML =
+        '<img id="edit-photo-img" src="' + compressed + '" style="width:100%;height:100%;object-fit:cover;">' +
+        '<div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,0.45);' +
+        'font-size:10px;color:#fff;text-align:center;padding:3px 0;border-radius:0 0 50px 50px;">👁 View</div>';
+    }
+    const removeBtn = document.getElementById('edit-photo-remove-btn');
+    if (removeBtn) removeBtn.style.display = 'inline-flex';
+
+    // Clear both inputs so same photo can be re-selected if needed
+    ['edit-photo-gallery','edit-photo-camera'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.value = '';
+    });
+  }).catch(() => showToast('Could not load image. Try again.', 'error'));
+}
+
+function removeEditPhoto() {
+  const preview = document.getElementById('edit-photo-preview');
+  if (preview) {
+    preview.style.cursor = 'default';
+    preview.innerHTML = '<span style="font-size:36px;">👤</span>';
+  }
+  ['edit-photo-gallery','edit-photo-camera','edit-photo-input'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+  const removeBtn = document.getElementById('edit-photo-remove-btn');
+  if (removeBtn) removeBtn.style.display = 'none';
+  window._editPhotoFile = null;
+  window._editPhotoCompressed = null;
+  window._editPhotoDeleted = true;
+}
+
+// Fullscreen photo viewer — WhatsApp DP style
+function viewProfilePhotoFullscreen() {
+  const img = document.getElementById('edit-photo-img');
+  if (!img || img.tagName !== 'IMG') return;
+  const src = img.src;
+
+  // Size: use the smaller of 80vw or 80vh so it's always a perfect square
+  const size = 'min(80vw, 80vh)';
+
+  const overlay = document.createElement('div');
+  overlay.id = 'photo-fullscreen-overlay';
+  overlay.style.cssText = [
+    'position:fixed','inset:0','z-index:9999',
+    'background:rgba(0,0,0,0.92)',
+    'display:flex','flex-direction:column',
+    'align-items:center','justify-content:center',
+    'animation:fadeIn 0.2s ease'
+  ].join(';');
+
+  overlay.innerHTML =
+    // Outer wrapper for close button positioning
+    '<div style="position:relative;display:inline-block;">' +
+
+      // Square container — border-radius:50% on a square = perfect circle
+      '<div style="' +
+        'width:' + size + ';' +
+        'height:' + size + ';' +
+        'border-radius:50%;' +
+        'overflow:hidden;' +
+        'border:3px solid var(--neon-blue);' +
+        'box-shadow:0 0 40px rgba(0,212,255,0.4),0 0 80px rgba(0,212,255,0.15);' +
+      '">' +
+        // Image fills square perfectly — object-fit:cover crops to fit
+        '<img src="' + src + '" style="' +
+          'width:100%;height:100%;' +
+          'object-fit:cover;' +
+          'display:block;' +
+        '">' +
+      '</div>' +
+
+      // Close button — top-right corner
+      '<button onclick="document.getElementById(\'photo-fullscreen-overlay\').remove()" ' +
+        'style="' +
+          'position:absolute;top:-8px;right:-8px;' +
+          'width:34px;height:34px;border-radius:50%;' +
+          'background:var(--bg-card);' +
+          'border:1px solid var(--border-bright);' +
+          'color:var(--text-white);font-size:16px;cursor:pointer;' +
+          'display:flex;align-items:center;justify-content:center;' +
+          'box-shadow:0 2px 8px rgba(0,0,0,0.5);' +
+        '">✕</button>' +
+
+    '</div>' +
+    '<p style="color:var(--text-dim);font-size:12px;margin-top:20px;letter-spacing:0.5px;">Tap anywhere to close</p>';
+
+  overlay.addEventListener('click', e => {
+    if (e.target === overlay || e.target.tagName === 'P') overlay.remove();
+  });
+
+  document.body.appendChild(overlay);
+}
+
+async function saveEditedProfile() {
+  const msgEl = document.getElementById('edit-profile-msg');
+  const showMsg = (msg, type) => {
+    msgEl.innerHTML = msg;
+    msgEl.style.cssText = 'display:block;padding:10px 14px;border-radius:var(--radius-sm);margin-bottom:14px;font-size:var(--fs-sm);' +
+      (type==='success' ? 'background:rgba(0,255,136,0.08);border:1px solid rgba(0,255,136,0.3);color:var(--success);' :
+       type==='loading' ? 'background:rgba(0,212,255,0.08);border:1px solid rgba(0,212,255,0.3);color:var(--neon-blue);' :
+       'background:rgba(255,68,102,0.08);border:1px solid rgba(255,68,102,0.3);color:var(--danger);');
+  };
+  
+  const name = document.getElementById('edit-name').value.trim();
+  const gender = document.getElementById('edit-gender').value;
+  const dob = document.getElementById('edit-dob').value;
+  const mobile = document.getElementById('edit-mobile').value.trim();
+  const altMobile = document.getElementById('edit-alt-mobile').value.trim();
+  const fatherName = document.getElementById('edit-father').value.trim();
+  const motherName = document.getElementById('edit-mother').value.trim();
+  const address = document.getElementById('edit-address').value.trim();
+
+  if (!name || !gender || !dob || !mobile || !fatherName || !motherName || !address) {
+    showMsg('⚠️ Please fill all required fields.', 'error'); return;
+  }
+  if (!/^\d{10}$/.test(mobile)) {
+    showMsg('⚠️ Mobile number must be exactly 10 digits.', 'error'); return;
+  }
+  if (altMobile && !/^\d{10}$/.test(altMobile)) {
+    showMsg('⚠️ Alt mobile must be 10 digits.', 'error'); return;
+  }
+  
+  try {
+    showMsg('⏳ Saving...', 'loading');
+    
+    let photoURL = AppState.currentUser.photo || null;
+    if (window._editPhotoDeleted) photoURL = null;
+    if (window._editPhotoFile) {
+      // Use already-compressed version if available, else compress now
+      photoURL = window._editPhotoCompressed ||
+        await new Promise(res => {
+          const r = new FileReader();
+          r.onload = e => res(e.target.result);
+          r.readAsDataURL(window._editPhotoFile);
+        });
+      window._editPhotoCompressed = null; // clear after use
+    }
+    
+    // Save both normalized (fatherName/motherName) and legacy (father/mother) keys for consistency
+    const updateData = { name, gender, dob,
+      mobile,
+      altMobile: altMobile||null,
+      fatherName, motherName,
+      father: fatherName, mother: motherName,
+      address, photo: photoURL };
+    // Use .id (the Firestore doc ID = studentId) not .mobile (which is just a field)
+    const docRef = AppState.currentUser.id || AppState.currentUser.mobile;
+    await db.collection('students').doc(docRef).update(updateData);
+    
+    Object.assign(AppState.currentUser, updateData);
+    // If mobile changed, update AppState so sidebar/session reflects new number
+    if (updateData.mobile) AppState.currentUser.mobile = updateData.mobile;
+    saveSession({ user: AppState.currentUser, isAdmin: false });
+    
+    showMsg('✅ Profile updated!', 'success');
+    setTimeout(() => {
+      closeModal('modal-edit-profile');
+      // Update sidebar name and photo without rebuilding whole dashboard
+      const sidebarName = document.querySelector('.sidebar-user-name');
+      if (sidebarName) sidebarName.textContent = updateData.name;
+      const sidebarPhoto = document.getElementById('s-sidebar-photo');
+      const sidebarEmoji = document.getElementById('s-sidebar-emoji');
+      if (sidebarPhoto && sidebarEmoji) {
+        if (updateData.photo) {
+          sidebarPhoto.src = updateData.photo;
+          sidebarPhoto.style.display = 'block';
+          sidebarEmoji.style.display = 'none';
+        } else {
+          sidebarPhoto.style.display = 'none';
+          sidebarEmoji.style.display = 'flex';
+        }
+      }
+      // Reload just the profile page content
+      reloadStudentProfilePage();
+    }, 1000);
+  } catch (err) {
+    console.error('Update error:', err);
+    showMsg('❌ Update failed. Try again.', 'error');
+  }
+}
+
+
+// =============================================================
+// RELOAD STUDENT PROFILE PAGE (in-place, no full rebuild)
+// Rebuilds only the profile details card with latest AppState data
+// =============================================================
+function reloadStudentProfilePage() {
+  const student = AppState.currentUser;
+  const className = getClassName(student.class);
+  const profilePage = document.getElementById('s-page-profile');
+  if (!profilePage) { showStudentPage('s-page-profile'); return; }
+
+  // Find the profile details card (first card inside grid-2col)
+  const detailsCard = profilePage.querySelector('.card');
+  if (!detailsCard) { showStudentPage('s-page-profile'); return; }
+
+  // Build photo HTML
+  const photoHTML = student.photo
+    ? `<img id="edit-photo-img" src="${student.photo}"
+            onclick="viewProfilePhotoFullscreen()"
+            style="width:80px;height:80px;border-radius:50%;object-fit:cover;
+                   border:2px solid var(--neon-blue);box-shadow:0 0 10px #00d4ff33;
+                   cursor:pointer;display:block;" title="Tap to view full screen">
+       <div onclick="viewProfilePhotoFullscreen()"
+            style="font-size:10px;color:var(--neon-blue);text-align:center;
+                   margin-top:4px;cursor:pointer;letter-spacing:0.5px;">👁 View</div>`
+    : `<div style="width:72px;height:72px;border-radius:50%;background:var(--bg-card2);
+                   border:2px solid var(--border);display:flex;align-items:center;
+                   justify-content:center;font-size:30px;">👤</div>`;
+
+  // Build detail rows
+  const fields = [
+    { icon:'📅', label:'Session',        val: student.session || '—' },
+    { icon:'📋', label:'Board',          val: student.board || 'BSEB' },
+    { icon:'🎓', label:'Class',          val: className },
+    { icon:'🔢', label:'Roll Number',    val: student.roll || '—' },
+    { icon:'👤', label:'Full Name',      val: student.name },
+    { icon:'⚧',  label:'Gender',         val: student.gender || '—' },
+    { icon:'🎂', label:'Date of Birth',  val: student.dob || '—' },
+    { icon:'📱', label:'Mobile Number',  val: student.mobile || '—' },
+    { icon:'📱', label:'Alt. Mobile',    val: student.altMobile || 'Not provided' },
+    { icon:'👨', label:"Father's Name",  val: student.fatherName || student.father || '—' },
+    { icon:'👩', label:"Mother's Name",  val: student.motherName || student.mother || '—' },
+    { icon:'📍', label:'Address',        val: student.address || '—' },
+  ];
+
+  const rowsHTML = fields.map(item => `
+    <div style="display:flex;gap:12px;align-items:flex-start;
+                padding-bottom:14px;border-bottom:1px solid var(--border);">
+      <span style="font-size:18px;flex-shrink:0;">${item.icon}</span>
+      <div>
+        <div style="font-size:var(--fs-xs);color:var(--text-dim);
+                    text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">${item.label}</div>
+        <div style="font-size:var(--fs-base);color:var(--text-white);font-weight:500;">${item.val}</div>
+      </div>
+    </div>`).join('');
+
+  // Rebuild the card innerHTML
+  detailsCard.innerHTML = `
+    <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+      <span>📋 My <span>Details</span></span>
+      <button class="btn btn-outline btn-sm" onclick="openEditProfileModal()" id="edit-profile-btn">
+        ✏️ Edit Profile
+      </button>
+    </div>
+    <div style="display:flex;align-items:center;gap:14px;margin-bottom:18px;
+                padding-bottom:16px;border-bottom:1px solid var(--border);">
+      <div style="flex-shrink:0;">${photoHTML}</div>
+      <div>
+        <div style="font-size:var(--fs-md);font-weight:700;color:var(--text-white);">${student.name}</div>
+        <div style="font-size:var(--fs-sm);color:var(--text-muted);margin-top:2px;">${className} &nbsp;·&nbsp; Roll ${student.roll || '—'}</div>
+        <div style="font-size:var(--fs-xs);color:var(--text-dim);margin-top:2px;">${student.session || '—'}</div>
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:16px;">${rowsHTML}</div>`;
+
+  showStudentPage('s-page-profile');
 }
 
 
@@ -4688,7 +5522,7 @@ function buildAdminDashboardHTML() {
        ID: dashboard-area
        Contains sidebar + all admin pages
        ===================================================== -->
-  <div id="dashboard-area" style="display:none;">
+  <div id="dashboard-area" style="display:none; max-width:100%; overflow-x:hidden;">
   <div class="app-layout">
 
     <!-- ── ADMIN SIDEBAR ── -->
@@ -4759,7 +5593,7 @@ function buildAdminDashboardHTML() {
           <span class="nav-icon">📅</span> Sessions
         </div>
         <div class="nav-item" data-page="a-page-settings"
-             onclick="showAdminPage('a-page-settings'); loadInstituteInfo(); loadSessionTimeoutUI();">\n          <span class="nav-icon">⚙️</span> Settings\n        </div>
+             onclick="showAdminPage('a-page-settings'); loadInstituteInfo(); loadSessionTimeoutUI(); loadProfileEditPermission();">\n          <span class="nav-icon">⚙️</span> Settings\n        </div>
 
       </nav>
 
@@ -5345,6 +6179,30 @@ function buildAdminDashboardHTML() {
 
         </div><!-- end grid-2col -->
 
+        <!-- ⚠️ FIX 5: Student Profile Edit Permission Toggle -->
+        <div style="max-width:800px; margin-top:24px;">
+          <div class="card">
+            <div class="card-title">👤 Student Profile <span>Settings</span></div>
+            <div class="info-box" style="margin-bottom:16px;">
+              Control whether students can edit their own profile details.<br>
+              <strong>Note:</strong> Students cannot change Session, Board, Class, or Roll Number regardless of this setting.
+            </div>
+            
+            <div id="profile-edit-msg"></div>
+            
+            <div style="display:flex; align-items:center; justify-content:space-between; padding:14px; background:var(--bg-card2); border-radius:var(--radius); border:1px solid var(--border);">
+              <div>
+                <div style="font-weight:600; font-size:var(--fs-base); margin-bottom:4px;">Allow Students to Edit Profile</div>
+                <div style="font-size:var(--fs-xs); color:var(--text-dim);">Students can update: Name, Gender, DOB, Alt Mobile, Parents' Names, Address, Photo</div>
+              </div>
+              <label class="switch" style="flex-shrink:0;">
+                <input type="checkbox" id="allow-profile-edit-toggle" onchange="toggleProfileEditPermission(this.checked)">
+                <span class="slider"></span>
+              </label>
+            </div>
+          </div>
+        </div>
+
         <div style="max-width:800px; margin-top:24px;">
           <div class="card">
             <div class="card-title">⏱️ Session Timeout <span>Settings</span></div>
@@ -5894,6 +6752,7 @@ function buildAdminDashboardHTML() {
         <button class="modal-close" onclick="closeModal('modal-edit-notice')">✕</button>
       </div>
       <input type="hidden" id="edit-notice-id">
+      <input type="hidden" id="edit-notice-isPublic">
       <div class="form-group">
         <label>Notice Title <span class="required">*</span></label>
         <input class="form-control" id="edit-notice-title">
@@ -5994,6 +6853,7 @@ function showAdminPage(pageId, addHistory = true) {
   });
 
   document.getElementById('admin-sidebar')?.classList.remove('mobile-open');
+  const bd3=document.getElementById('sidebar-backdrop'); if(bd3) bd3.style.display='none';
 
   if (addHistory) {
     history.pushState({ page: pageId, area: 'admin' }, '', `#${pageId}`);
@@ -6355,19 +7215,35 @@ async function loadPendingStudents() {
                             margin-bottom:6px; font-weight:600;">
                   🪪 ${studentId}
                 </div>
+                <!-- Row 1: mobile, class, board, roll, registration date -->
                 <div style="display:flex; gap:8px; flex-wrap:wrap;
-                            font-size:var(--fs-xs); color:var(--text-muted);">
+                            font-size:var(--fs-xs); color:var(--text-muted); margin-bottom:6px;">
                   <span>📱 ${s.mobile}</span>
+                  ${s.altMobile ? `<span>📱 Alt: ${s.altMobile}</span>` : ''}
                   <span>🎓 ${className}</span>
                   <span class="badge ${(s.board||'BSEB')==='CBSE' ? 'badge-green' : 'badge-blue'}" style="font-size:10px;">${(s.board||'BSEB')==='CBSE' ? '📗 CBSE' : '📘 BSEB'}</span>
                   ${s.roll ? `<span>🔢 Roll: ${s.roll}</span>` : ''}
-                  ${s.address ? `<span>📍 ${s.address}</span>` : ''}
-                  <span>📅 Registered: ${formatDate(s.createdAt)}</span>
+                  <span>📅 ${formatDate(s.createdAt)}</span>
                 </div>
+                <!-- Row 2: gender, dob, father, mother -->
+                <div style="display:flex; gap:8px; flex-wrap:wrap;
+                            font-size:var(--fs-xs); color:var(--text-muted); margin-bottom:6px;">
+                  ${s.gender ? `<span>⚧ ${s.gender}</span>` : ''}
+                  ${s.dob ? `<span>🎂 ${s.dob}</span>` : ''}
+                  ${s.fatherName ? `<span>👨 ${s.fatherName}</span>` : ''}
+                  ${s.motherName ? `<span>👩 ${s.motherName}</span>` : ''}
+                </div>
+                <!-- Row 3: address -->
+                ${s.address ? `<div style="font-size:var(--fs-xs); color:var(--text-dim); margin-top:2px; line-height:1.4;">📍 ${s.address}</div>` : ''}
               </div>
             </div>
-            <div style="display:flex; gap:10px; align-items:center;">
+            <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
               <span class="badge badge-orange">⏳ Pending</span>
+              <button class="btn btn-ghost btn-sm"
+                      onclick="viewPendingStudentDetails('${doc.id}')"
+                      title="View full details">
+                👁️ View
+              </button>
               <button class="btn btn-success btn-sm"
                       onclick="approveStudent('${doc.id}')">
                 ✅ Approve
@@ -6383,6 +7259,154 @@ async function loadPendingStudents() {
 
   } catch (err) {
     container.innerHTML = '<div class="info-box">Could not load pending students.</div>';
+  }
+}
+
+
+// =============================================================
+// VIEW PENDING STUDENT DETAILS (opens modal with FULL form data)
+// ⚠️ FIX: Now shows ALL registration fields
+// =============================================================
+async function viewPendingStudentDetails(mobile) {
+  try {
+    const doc = await db.collection('students').doc(mobile).get();
+    if (!doc.exists) {
+      showToast('Student not found.', 'error');
+      return;
+    }
+    
+    const s = doc.data();
+    const className = getClassName(s.class);
+    
+    const modalHTML = `
+      <div id="modal-view-pending-student" class="modal-overlay">
+        <div class="modal" style="max-width:700px; max-height:90vh; overflow-y:auto;">
+          <div class="modal-header">
+            <h3 class="modal-title">📋 Student Registration Details</h3>
+            <button class="btn btn-ghost btn-sm" onclick="closeModal('modal-view-pending-student')" style="margin-left:auto;">✕</button>
+          </div>
+          <div class="modal-body">
+            ${s.photo ? `
+              <div style="text-align:center; margin-bottom:20px;">
+                <img src="${s.photo}" style="width:120px; height:120px; border-radius:50%; object-fit:cover; border:3px solid var(--neon-blue);">
+              </div>` : `
+              <div style="text-align:center; margin-bottom:20px;">
+                <div style="width:120px; height:120px; border-radius:50%; background:var(--bg-card2); border:3px solid var(--border); margin:0 auto; display:flex; align-items:center; justify-content:center; font-size:48px;">👤</div>
+              </div>`}
+            
+            <div style="display:grid; gap:16px;">
+              
+              <!-- Session, Board, Class, Roll -->
+              <div style="background:var(--bg-card2); padding:16px; border-radius:12px; border:1px solid var(--border);">
+                <div style="color:var(--text-dim); font-size:10px; text-transform:uppercase; letter-spacing:1px; margin-bottom:10px; font-weight:600;">Academic Details</div>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+                  <div>
+                    <div style="color:var(--text-muted); font-size:11px; margin-bottom:3px;">Session</div>
+                    <div style="font-weight:600; color:var(--neon-blue);">${s.session || '—'}</div>
+                  </div>
+                  <div>
+                    <div style="color:var(--text-muted); font-size:11px; margin-bottom:3px;">Board</div>
+                    <div style="font-weight:600;">${(s.board||'BSEB')==='CBSE' ? '📗 CBSE' : '📘 BSEB'}</div>
+                  </div>
+                  <div>
+                    <div style="color:var(--text-muted); font-size:11px; margin-bottom:3px;">Class</div>
+                    <div style="font-weight:600;">${className}</div>
+                  </div>
+                  <div>
+                    <div style="color:var(--text-muted); font-size:11px; margin-bottom:3px;">Roll Number</div>
+                    <div style="font-weight:600;">${s.roll || '—'}</div>
+                  </div>
+                </div>
+              </div>
+              
+              <!-- Student ID -->
+              <div class="form-group">
+                <label style="color:var(--text-muted); font-size:11px; text-transform:uppercase; letter-spacing:1px;">Student ID</label>
+                <div style="font-weight:600; font-size:var(--fs-base); color:var(--neon-blue);">${s.studentId || mobile}</div>
+              </div>
+              
+              <!-- Full Name -->
+              <div class="form-group">
+                <label style="color:var(--text-muted); font-size:11px; text-transform:uppercase; letter-spacing:1px;">Full Name</label>
+                <div style="font-weight:600; font-size:var(--fs-md);">${s.name}</div>
+              </div>
+              
+              <!-- Gender & DOB -->
+              <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px;">
+                <div class="form-group">
+                  <label style="color:var(--text-muted); font-size:11px; text-transform:uppercase; letter-spacing:1px;">Gender</label>
+                  <div style="font-weight:600;">${s.gender || '—'}</div>
+                </div>
+                <div class="form-group">
+                  <label style="color:var(--text-muted); font-size:11px; text-transform:uppercase; letter-spacing:1px;">Date of Birth</label>
+                  <div style="font-weight:600;">${s.dob || '—'}</div>
+                </div>
+              </div>
+              
+              <!-- Mobile Numbers -->
+              <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px;">
+                <div class="form-group">
+                  <label style="color:var(--text-muted); font-size:11px; text-transform:uppercase; letter-spacing:1px;">Mobile Number</label>
+                  <div style="font-weight:600;">${s.mobile}</div>
+                </div>
+                <div class="form-group">
+                  <label style="color:var(--text-muted); font-size:11px; text-transform:uppercase; letter-spacing:1px;">Alt. Mobile</label>
+                  <div style="font-weight:600;">${s.altMobile || '—'}</div>
+                </div>
+              </div>
+              
+              <!-- Father & Mother Name -->
+              <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px;">
+                <div class="form-group">
+                  <label style="color:var(--text-muted); font-size:11px; text-transform:uppercase; letter-spacing:1px;">Father's Name</label>
+                  <div style="font-weight:600;">${s.fatherName || '—'}</div>
+                </div>
+                <div class="form-group">
+                  <label style="color:var(--text-muted); font-size:11px; text-transform:uppercase; letter-spacing:1px;">Mother's Name</label>
+                  <div style="font-weight:600;">${s.motherName || '—'}</div>
+                </div>
+              </div>
+              
+              <!-- Address -->
+              <div class="form-group">
+                <label style="color:var(--text-muted); font-size:11px; text-transform:uppercase; letter-spacing:1px;">Address</label>
+                <div style="font-weight:600; line-height:1.6; white-space:pre-wrap;">${s.address || '—'}</div>
+              </div>
+              
+              <!-- Registration Date -->
+              <div class="form-group">
+                <label style="color:var(--text-muted); font-size:11px; text-transform:uppercase; letter-spacing:1px;">Registration Date</label>
+                <div style="font-weight:600;">${formatDate(s.createdAt)}</div>
+              </div>
+              
+              <!-- Status Badge -->
+              <div style="background:rgba(255,180,0,0.1); border-left:3px solid var(--warning); padding:14px; border-radius:10px; margin-top:4px;">
+                <div style="color:var(--warning); font-weight:600; font-size:var(--fs-sm); margin-bottom:4px;">⏳ Pending Approval</div>
+                <div style="color:var(--text-muted); font-size:var(--fs-xs); line-height:1.5;">This student is waiting for admin approval to access the portal. Review all details carefully before approving.</div>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer" style="gap:10px;">
+            <button class="btn btn-ghost" onclick="closeModal('modal-view-pending-student')">Close</button>
+            <button class="btn btn-danger" onclick="closeModal('modal-view-pending-student'); rejectStudent('${mobile}','${s.name.replace(/'/g,"\\'")}')">❌ Reject</button>
+            <button class="btn btn-success" onclick="closeModal('modal-view-pending-student'); approveStudent('${mobile}')">✅ Approve</button>
+          </div>
+        </div>
+      </div>`;
+    
+    // Remove existing modal if any
+    const existing = document.getElementById('modal-view-pending-student');
+    if (existing) existing.remove();
+    
+    // Append to body
+    document.body.insertAdjacentHTML('beforeend', modalHTML);
+    
+    // Show modal
+    openModal('modal-view-pending-student');
+    
+  } catch (err) {
+    console.error('Error loading student details:', err);
+    showToast('Could not load student details. Please try again.', 'error');
   }
 }
 
@@ -6486,6 +7510,7 @@ function getClassName(classId) {
 
 // =============================================================
 // RENDER STUDENTS TABLE (called by filter functions too)
+// ⚠️ SORTING: Class DESC (10→9→8) + Roll ASC (1→51) within class
 // =============================================================
 function renderStudentsTable(students) {
   const tbody = document.getElementById('a-students-tbody');
@@ -6496,6 +7521,29 @@ function renderStudentsTable(students) {
       padding:32px; color:var(--text-muted);">No students found.</td></tr>`;
     return;
   }
+
+  // Sort: Extract class number, sort DESC, then by roll ASC
+  const sorted = students.slice().sort((a, b) => {
+    // Extract class number from class name
+    const getClassNum = (s) => {
+      const className = getClassName(s.class);
+      const match = className.match(/(\d+)/);
+      return match ? parseInt(match[1]) : 0;
+    };
+    
+    const classA = getClassNum(a);
+    const classB = getClassNum(b);
+    
+    // Class DESC (10 first, then 9, 8...)
+    if (classA !== classB) return classB - classA;
+    
+    // Within same class: Roll ASC (1, 2, 3...)
+    const rollA = parseInt(a.roll) || 999;
+    const rollB = parseInt(b.roll) || 999;
+    return rollA - rollB;
+  });
+
+  students = sorted; // Use sorted array
 
   const statusBadge = {
     approved: '<span class="badge badge-green">✅ Active</span>',
@@ -7035,17 +8083,35 @@ function viewStudentDetails(mobile) {
 
   document.getElementById('view-student-content').innerHTML = `
     <div style="display:flex; flex-direction:column; gap:14px;">
-      <div style="text-align:center; margin-bottom:8px;">
-        <img src="${student.photo || ''}"
-             onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';"
-             ${student.photo ? '' : 'style="display:none;"'}
-             style="width:88px;height:88px;border-radius:50%;object-fit:cover;
-                    border:2px solid var(--neon-blue); margin:0 auto; display:block;">
-        <div style="width:88px;height:88px;border-radius:50%;
-                    background:var(--bg-card2); border:2px solid var(--border);
-                    display:${student.photo ? 'none' : 'flex'};
-                    align-items:center;justify-content:center;
-                    font-size:36px; margin:0 auto;">👤</div>
+      <div style="text-align:center; margin-bottom:12px;">
+        ${student.photo ? `
+          <!-- Photo circle — tappable for fullscreen -->
+          <div style="position:relative; display:inline-block;">
+            <img id="admin-view-photo-img"
+                 src="${student.photo}"
+                 onclick="adminViewPhotoFullscreen('${student.photo}', '${student.name.replace(/'/g, "\\'")}')"
+                 style="width:96px;height:96px;border-radius:50%;object-fit:cover;
+                         border:2px solid var(--neon-blue);margin:0 auto;display:block;
+                         cursor:pointer;box-shadow:0 0 12px rgba(0,212,255,0.3);">
+            <div onclick="adminViewPhotoFullscreen('${student.photo}', '${student.name.replace(/'/g, "\\'")}')"
+                 style="font-size:10px;color:var(--neon-blue);margin-top:4px;
+                         cursor:pointer;letter-spacing:0.5px;">👁 View Full</div>
+          </div>
+          <!-- Download button -->
+          <div style="margin-top:10px;">
+            <button onclick="adminDownloadPhoto('${student.photo}', '${student.name.replace(/'/g, "\\'")}')"
+                    class="btn btn-outline btn-sm"
+                    style="font-size:12px;gap:6px;">
+              ⬇️ Download Photo
+            </button>
+          </div>
+        ` : `
+          <div style="width:96px;height:96px;border-radius:50%;
+                      background:var(--bg-card2);border:2px solid var(--border);
+                      display:flex;align-items:center;justify-content:center;
+                      font-size:40px;margin:0 auto;">👤</div>
+          <div style="font-size:11px;color:var(--text-dim);margin-top:6px;">No photo uploaded</div>
+        `}
       </div>
       ${[
         { icon:'🪪', label:'Student ID',      val: `<strong style="color:var(--neon-blue);">${student.studentId || student.id}</strong>` },
@@ -7093,6 +8159,85 @@ function viewStudentDetails(mobile) {
   openModal('modal-view-student');
 }
 
+
+// =============================================================
+// ADMIN — VIEW STUDENT PHOTO FULLSCREEN (WhatsApp DP style)
+// =============================================================
+function adminViewPhotoFullscreen(src, studentName) {
+  if (!src) return;
+  const size = 'min(80vw, 80vh)';
+
+  const overlay = document.createElement('div');
+  overlay.id = 'admin-photo-fullscreen-overlay';
+  overlay.style.cssText = [
+    'position:fixed','inset:0','z-index:9999',
+    'background:rgba(0,0,0,0.92)',
+    'display:flex','flex-direction:column',
+    'align-items:center','justify-content:center',
+    'animation:fadeIn 0.2s ease'
+  ].join(';');
+
+  overlay.innerHTML =
+    '<div style="position:relative;display:inline-block;">' +
+      '<div style="' +
+        'width:' + size + ';height:' + size + ';' +
+        'border-radius:50%;overflow:hidden;' +
+        'border:3px solid var(--neon-blue);' +
+        'box-shadow:0 0 40px rgba(0,212,255,0.4),0 0 80px rgba(0,212,255,0.15);' +
+      '">' +
+        '<img src="' + src + '" style="width:100%;height:100%;object-fit:cover;display:block;">' +
+      '</div>' +
+      '<button id="admin-photo-close-btn" ' +
+        'style="position:absolute;top:-8px;right:-8px;width:34px;height:34px;' +
+        'border-radius:50%;background:var(--bg-card);border:1px solid var(--border-bright);' +
+        'color:var(--text-white);font-size:16px;cursor:pointer;' +
+        'display:flex;align-items:center;justify-content:center;' +
+        'box-shadow:0 2px 8px rgba(0,0,0,0.5);">✕</button>' +
+    '</div>' +
+    '<div style="color:var(--text-white);font-size:14px;font-weight:600;margin-top:16px;">' + studentName + '</div>' +
+    '<div style="display:flex;gap:12px;margin-top:12px;">' +
+      '<button id="admin-photo-download-btn" ' +
+        'style="background:rgba(0,212,255,0.1);border:1px solid var(--neon-blue);' +
+        'color:var(--neon-blue);padding:8px 20px;border-radius:20px;' +
+        'font-size:13px;cursor:pointer;display:flex;align-items:center;gap:6px;">' +
+        '⬇️ Download Photo' +
+      '</button>' +
+    '</div>' +
+    '<p style="color:var(--text-dim);font-size:12px;margin-top:12px;">Tap anywhere to close</p>';
+
+  overlay.addEventListener('click', e => {
+    if (e.target === overlay || e.target.tagName === 'P') overlay.remove();
+  });
+  document.body.appendChild(overlay);
+
+  document.getElementById('admin-photo-close-btn').addEventListener('click', () => overlay.remove());
+  document.getElementById('admin-photo-download-btn').addEventListener('click', () => {
+    adminDownloadPhoto(src, studentName);
+  });
+}
+
+// =============================================================
+// ADMIN — DOWNLOAD STUDENT PHOTO
+// Works on both PC (saves file) and Android (opens in browser)
+// =============================================================
+function adminDownloadPhoto(src, studentName) {
+  if (!src) { showToast('No photo to download.', 'error'); return; }
+
+  try {
+    // Create a temporary anchor and trigger download
+    const link = document.createElement('a');
+    // Clean filename — remove special chars
+    const filename = (studentName || 'student').replace(/[^a-zA-Z0-9 ]/g, '').trim().replace(/\s+/g, '_') + '_photo.jpg';
+    link.download = filename;
+    link.href = src; // base64 data URL works directly
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showToast('📥 Photo download started!', 'success');
+  } catch (err) {
+    showToast('Could not download photo. Try long-pressing the image.', 'error');
+  }
+}
 
 function toggleViewPassword(actualPassword) {
   const txt = document.getElementById('view-pwd-text');
@@ -7777,7 +8922,7 @@ async function loadAdminNotices() {
                           '${n.title.replace(/'/g, "\\'")}',
                           '${n.message.replace(/'/g, "\\'").replace(/\n/g, '\\n')}',
                           '${n.importance || 'normal'}',
-                          ${showHome}, ${showDash}); toggleNoticeMenu('${doc.id}')"
+                          ${showHome}, ${showDash}, ${isPublic}); toggleNoticeMenu('${doc.id}')"
                         style="width:100%; padding:12px 16px; background:none; border:none;
                                color:var(--text-white); text-align:left; cursor:pointer;
                                font-size:var(--fs-sm); display:flex; align-items:center; gap:10px;
@@ -7927,8 +9072,9 @@ async function handleAddNotice() {
 // =============================================================
 // OPEN EDIT NOTICE MODAL
 // =============================================================
-function openEditNoticeModal(id, title, message, importance, showOnHome, showOnDashboard) {
+function openEditNoticeModal(id, title, message, importance, showOnHome, showOnDashboard, isPublic) {
   document.getElementById('edit-notice-id').value         = id;
+  document.getElementById('edit-notice-isPublic').value   = (isPublic !== false) ? 'true' : 'false';
   document.getElementById('edit-notice-title').value      = title;
   document.getElementById('edit-notice-message').value    = message.replace(/\\n/g, '\n');
   document.getElementById('edit-notice-importance').value = importance;
@@ -7955,6 +9101,8 @@ async function handleEditNotice() {
   const importance = document.getElementById('edit-notice-importance').value;
   const showOnHome      = document.getElementById('edit-notice-vis-home').checked;
   const showOnDashboard = document.getElementById('edit-notice-vis-dashboard').checked;
+  // Preserve the existing isPublic state — editing should never silently change visibility
+  const isPublic = document.getElementById('edit-notice-isPublic').value !== 'false';
 
   if (!title || !message) {
     showToast('Please fill in title and message.', 'error'); return;
@@ -7964,7 +9112,7 @@ async function handleEditNotice() {
   }
 
   try {
-    await db.collection('notices').doc(id).update({ title, message, importance, showOnHome, showOnDashboard });
+    await db.collection('notices').doc(id).update({ title, message, importance, showOnHome, showOnDashboard, isPublic });
     showToast('Notice updated! ✅', 'success');
     closeModal('modal-edit-notice');
     loadAdminNotices();
@@ -8179,6 +9327,47 @@ function showSettingsMsg(msg, type) {
        border:1px solid rgba(255,68,102,0.3);border-radius:var(--radius-sm);
        margin-bottom:14px;font-size:var(--fs-sm);color:var(--danger);`;
   setTimeout(() => { if (el) el.style.display = 'none'; }, 5000);
+}
+
+
+// =============================================================
+// ⚠️ FIX 5: PROFILE EDIT PERMISSION - Load and Toggle
+// =============================================================
+async function loadProfileEditPermission() {
+  try {
+    const doc = await db.collection('admin').doc('settings').get();
+    const allowProfileEdit = doc.exists ? doc.data().allowProfileEdit !== false : true;
+    const toggle = document.getElementById('allow-profile-edit-toggle');
+    if (toggle) toggle.checked = allowProfileEdit;
+  } catch (err) {
+    console.error('Error loading profile edit permission:', err);
+  }
+}
+
+async function toggleProfileEditPermission(isEnabled) {
+  const msgEl = document.getElementById('profile-edit-msg');
+  const showMsg = (msg, type) => {
+    if (!msgEl) return;
+    msgEl.innerHTML = msg;
+    msgEl.style.cssText = 'display:block;padding:10px 14px;border-radius:var(--radius-sm);margin-bottom:14px;font-size:var(--fs-sm);' +
+      (type==='success' ? 'background:rgba(0,255,136,0.08);border:1px solid rgba(0,255,136,0.3);color:var(--success);' :
+       'background:rgba(255,68,102,0.08);border:1px solid rgba(255,68,102,0.3);color:var(--danger);');
+    setTimeout(() => { if (msgEl) msgEl.style.display = 'none'; }, 3000);
+  };
+  
+  try {
+    await db.collection('admin').doc('settings').set({
+      allowProfileEdit: isEnabled
+    }, { merge: true });
+    
+    showMsg('✅ Profile editing '+(isEnabled ? 'enabled' : 'disabled')+' for students', 'success');
+  } catch (err) {
+    console.error('Toggle error:', err);
+    showMsg('❌ Update failed. Try again.', 'error');
+    // Revert toggle on error
+    const toggle = document.getElementById('allow-profile-edit-toggle');
+    if (toggle) toggle.checked = !isEnabled;
+  }
 }
 
 
@@ -8734,6 +9923,76 @@ console.log('✅ PART 4: Admin Dashboard loaded');
 // =====================================================
 
 // =============================================================
+// DRAG-DROP SORTING FOR FOLDERS (Admin only)
+// Lightweight implementation using HTML5 drag-drop API
+// =============================================================
+function initFolderDragSort() {
+  const folderGrid = document.getElementById('sortable-folders');
+  if (!folderGrid) return;
+
+  const folderItems = folderGrid.querySelectorAll('.folder-item[draggable="true"]');
+  let draggedItem = null;
+
+  folderItems.forEach(item => {
+    item.addEventListener('dragstart', function(e) {
+      draggedItem = this;
+      this.style.opacity = '0.5';
+      e.dataTransfer.effectAllowed = 'move';
+    });
+
+    item.addEventListener('dragend', function() {
+      this.style.opacity = '1';
+      draggedItem = null;
+    });
+
+    item.addEventListener('dragover', function(e) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      
+      if (this === draggedItem) return;
+      
+      const rect = this.getBoundingClientRect();
+      const midpoint = rect.left + rect.width / 2;
+      
+      if (e.clientX < midpoint) {
+        this.parentNode.insertBefore(draggedItem, this);
+      } else {
+        this.parentNode.insertBefore(draggedItem, this.nextSibling);
+      }
+    });
+
+    item.addEventListener('drop', async function(e) {
+      e.preventDefault();
+      await saveFolderOrder();
+    });
+  });
+}
+
+// Save new folder order to Firebase
+async function saveFolderOrder() {
+  const folderGrid = document.getElementById('sortable-folders');
+  if (!folderGrid) return;
+
+  const folderItems = folderGrid.querySelectorAll('.folder-item[draggable="true"]');
+  const batch = db.batch();
+
+  folderItems.forEach((item, index) => {
+    const folderId = item.getAttribute('data-folder-id');
+    const folderRef = db.collection('folders').doc(folderId);
+    batch.update(folderRef, { sortOrder: index });
+  });
+
+  try {
+    await batch.commit();
+    console.log('✅ Folder order saved');
+  } catch (err) {
+    console.error('Error saving folder order:', err);
+    showToast('Could not save folder order. Please try again.', 'error');
+  }
+}
+
+
+// =============================================================
 // ADMIN MATERIALS PAGE STATE
 // Tracks which class and folder admin is browsing
 // =============================================================
@@ -9145,7 +10404,17 @@ async function loadAdminFolderContents(parentFolderId) {
       ? foldersQuery.where('parentFolderId', '==', null)
       : foldersQuery.where('parentFolderId', '==', parentFolderId);
 
-    const foldersSnap = await foldersQuery.orderBy('name').get();
+    const foldersSnap = await foldersQuery.get();
+    
+    // ⚠️ FIX 2: Sort folders by sortOrder field (for drag-drop), fallback to name
+    const folders = foldersSnap.docs
+      .map(doc => ({ id: doc.id, ...doc.data() }))
+      .sort((a, b) => {
+        if (a.sortOrder !== undefined && b.sortOrder !== undefined) {
+          return a.sortOrder - b.sortOrder;
+        }
+        return (a.name || '').localeCompare(b.name || '');
+      });
 
     // ── Load files in this folder ──
     const filesSnap = await db.collection('materials')
@@ -9157,7 +10426,7 @@ async function loadAdminFolderContents(parentFolderId) {
     let html = '';
 
     // ── FOLDERS SECTION ──
-    if (!foldersSnap.empty) {
+    if (folders.length > 0) {
       html += `
         <div style="margin-bottom:28px;">
           <div style="
@@ -9167,23 +10436,32 @@ async function loadAdminFolderContents(parentFolderId) {
             display:flex; align-items:center; gap:8px;
           ">
             📁 Folders
-            <span class="badge badge-gray">${foldersSnap.size}</span>
+            <span class="badge badge-gray">${folders.length}</span>
+            <span style="font-size:10px;color:var(--text-dim);margin-left:auto;">⋮⋮ Drag to reorder</span>
           </div>
-          <div class="folder-grid">`;
+          <div class="folder-grid" id="sortable-folders">`;
 
-      foldersSnap.forEach(doc => {
-        const f = doc.data();
+      folders.forEach((f, idx) => {
         const isLocked = f.isLocked;
         const countdown = f.unlockTimer ? getCountdown(f.unlockTimer) : null;
 
         html += `
           <div class="folder-item ${isLocked ? 'locked-item' : ''}"
-               style="border-color:${isLocked ? 'rgba(255,68,102,0.4)' : 'var(--border)'}; cursor:pointer;"
-               onclick="adminEnterFolder('${doc.id}', '${f.name.replace(/'/g,"\\'")}')">
+               draggable="true"
+               data-folder-id="${f.id}"
+               data-sort-order="${f.sortOrder !== undefined ? f.sortOrder : idx}"
+               style="border-color:${isLocked ? 'rgba(255,68,102,0.4)' : 'var(--border)'}; cursor:grab;"
+               onclick="adminEnterFolder('${f.id}', '${f.name.replace(/'/g,"\\'")}')">
+
+            <!-- Drag handle -->
+            <div style="
+              position:absolute; top:8px; left:8px;
+              font-size:14px; color:var(--text-dim); cursor:grab;
+            " onmousedown="event.stopPropagation();" title="Drag to reorder">⋮⋮</div>
 
             <!-- Lock indicator -->
             <div style="
-              position:absolute; top:8px; left:8px;
+              position:absolute; top:8px; left:32px;
               display:flex; gap:4px; align-items:center;
             ">
               ${isLocked
@@ -9194,7 +10472,7 @@ async function loadAdminFolderContents(parentFolderId) {
             <!-- Timer badge if set -->
             ${countdown ? `
               <div style="
-                position:absolute; top:8px; right:8px;
+                position:absolute; top:8px; right:36px;
                 font-size:10px;
               ">
                 <span class="timer-badge">⏰ ${countdown}</span>
@@ -9209,14 +10487,14 @@ async function loadAdminFolderContents(parentFolderId) {
             <!-- 3-dot menu -->
             <div style="position:absolute;top:8px;right:8px;">
               <button class="btn btn-ghost btn-sm folder-menu-btn"
-                      onclick="event.stopPropagation();toggleFolderMenu('fmenu-${doc.id}',this)"
+                      onclick="event.stopPropagation();toggleFolderMenu('fmenu-${f.id}',this)"
                       style="font-size:20px;font-weight:900;padding:0 6px;line-height:1;border:none;">⋮</button>
-              <div id="fmenu-${doc.id}" class="folder-dropdown-menu" style="display:none;">
-                <div class="fdm-item" onclick="event.stopPropagation();closeFolderMenus();adminEnterFolder('${doc.id}','${f.name.replace(/'/g,"\\'")}')">📂 Open</div>
-                <div class="fdm-item" onclick="event.stopPropagation();closeFolderMenus();toggleFolderLock('${doc.id}',${isLocked})">${isLocked ? '🔓 Unlock' : '🔒 Lock'}</div>
-                <div class="fdm-item" onclick="event.stopPropagation();closeFolderMenus();openSetTimerModal('${doc.id}','folder','${countdown||''}')">⏰ Set Timer${countdown ? ' ✓':''}</div>
-                <div class="fdm-item" onclick="event.stopPropagation();closeFolderMenus();openRenameFolderModal('${doc.id}','${f.name.replace(/'/g,"\\'")}')">✏️ Rename</div>
-                <div class="fdm-item fdm-danger" onclick="event.stopPropagation();closeFolderMenus();confirmDeleteFolder('${doc.id}','${f.name.replace(/'/g,"\\'")}')">🗑️ Delete</div>
+              <div id="fmenu-${f.id}" class="folder-dropdown-menu" style="display:none;">
+                <div class="fdm-item" onclick="event.stopPropagation();closeFolderMenus();adminEnterFolder('${f.id}','${f.name.replace(/'/g,"\\'")}')">📂 Open</div>
+                <div class="fdm-item" onclick="event.stopPropagation();closeFolderMenus();toggleFolderLock('${f.id}',${isLocked})">${isLocked ? '🔓 Unlock' : '🔒 Lock'}</div>
+                <div class="fdm-item" onclick="event.stopPropagation();closeFolderMenus();openSetTimerModal('${f.id}','folder','${countdown||''}')">⏰ Set Timer${countdown ? ' ✓':''}</div>
+                <div class="fdm-item" onclick="event.stopPropagation();closeFolderMenus();openRenameFolderModal('${f.id}','${f.name.replace(/'/g,"\\'")}')">✏️ Rename</div>
+                <div class="fdm-item fdm-danger" onclick="event.stopPropagation();closeFolderMenus();confirmDeleteFolder('${f.id}','${f.name.replace(/'/g,"\\'")}')">🗑️ Delete</div>
               </div>
             </div>
           </div>`;
@@ -9268,6 +10546,9 @@ async function loadAdminFolderContents(parentFolderId) {
     }
 
     container.innerHTML = html;
+    
+    // ⚠️ FIX 2: Enable drag-and-drop sorting for folders
+    initFolderDragSort();
 
   } catch (err) {
     container.innerHTML = `
