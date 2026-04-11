@@ -1921,59 +1921,37 @@ input:checked + .slider:before {
 }
 #pdf-dl-btn:hover { border-color: var(--neon-blue); color: var(--neon-blue); }
 
-/* PWA Install Banner */
-#pwa-install-banner {
+/* PWA Install Button (sidebar) */
+.pwa-install-sidebar-btn {
   display: none;
-  position: fixed;
-  bottom: 16px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 8000;
-  background: var(--bg-card);
-  border: 1px solid var(--neon-blue);
-  border-radius: 14px;
-  padding: 12px 16px;
-  box-shadow: 0 4px 24px rgba(0,212,255,0.2);
-  max-width: 360px;
-  width: calc(100% - 32px);
-  display: none;
+  width: 100%;
   align-items: center;
-  gap: 12px;
-}
-#pwa-install-banner.show { display: flex; }
-#pwa-install-banner .pwa-icon { font-size: 28px; flex-shrink: 0; }
-#pwa-install-banner .pwa-text { flex: 1; min-width: 0; }
-#pwa-install-banner .pwa-text strong {
-  display: block;
-  font-family: 'Rajdhani', sans-serif;
-  font-size: var(--fs-base);
-  color: var(--text-white);
-  font-weight: 700;
-}
-#pwa-install-banner .pwa-text span {
-  font-size: var(--fs-xs);
-  color: var(--text-muted);
-}
-#pwa-install-btn {
-  background: var(--neon-blue);
-  color: #000;
-  border: none;
+  justify-content: center;
+  gap: 8px;
+  padding: 9px 12px;
+  margin-bottom: 8px;
+  background: transparent;
+  border: 1px solid var(--neon-blue);
   border-radius: 8px;
-  padding: 8px 14px;
-  font-weight: 700;
+  color: var(--neon-blue);
   font-family: 'Rajdhani', sans-serif;
   font-size: var(--fs-sm);
+  font-weight: 600;
   cursor: pointer;
-  white-space: nowrap;
+  transition: background 0.2s, color 0.2s;
 }
-#pwa-dismiss-btn {
-  background: none;
-  border: none;
-  color: var(--text-dim);
-  font-size: 18px;
-  cursor: pointer;
-  padding: 4px;
-  flex-shrink: 0;
+.pwa-install-sidebar-btn:hover {
+  background: rgba(0,212,255,0.1);
+}
+.pwa-install-sidebar-btn.pwa-ready {
+  display: flex;
+}
+.pwa-install-sidebar-btn.pwa-installed {
+  display: flex;
+  border-color: var(--success);
+  color: var(--success);
+  cursor: default;
+  opacity: 0.7;
 }
 
 </style>
@@ -2033,19 +2011,6 @@ input:checked + .slider:before {
     </div>
   </div>
 
-</div>
-
-<!-- =============================================================
-     PWA INSTALL BANNER
-     ============================================================= -->
-<div id="pwa-install-banner" role="complementary">
-  <div class="pwa-icon">📚</div>
-  <div class="pwa-text">
-    <strong>Install BCI App</strong>
-    <span>Quick access, works like a native app</span>
-  </div>
-  <button id="pwa-install-btn" onclick="pwaInstall()">Install</button>
-  <button id="pwa-dismiss-btn" onclick="pwaDismiss()" title="Dismiss">✕</button>
 </div>
 
 <!-- =============================================================
@@ -4458,6 +4423,9 @@ function buildStudentDashboardHTML() {
       <!-- Logout -->
       <div class="sidebar-footer">
         <div id="student-session-expiry" style="font-size:10px;color:var(--text-dim);text-align:center;margin-bottom:8px;"></div>
+        <button id="pwa-btn-student" class="pwa-install-sidebar-btn" onclick="pwaInstall()" title="Install BCI as app on your device">
+          📲 Install App
+        </button>
         <button class="btn btn-danger w-full btn-sm" onclick="confirmLogout()">
           🚪 Logout
         </button>
@@ -6624,6 +6592,9 @@ function buildAdminDashboardHTML() {
       <!-- Logout -->
       <div class="sidebar-footer">
         <div id="admin-session-expiry" style="font-size:10px;color:var(--text-dim);text-align:center;margin-bottom:8px;"></div>
+        <button id="pwa-btn-admin" class="pwa-install-sidebar-btn" onclick="pwaInstall()" title="Install BCI as app on your device">
+          📲 Install App
+        </button>
         <button class="btn btn-danger w-full btn-sm" onclick="confirmLogout()">
           🚪 Logout
         </button>
@@ -15370,59 +15341,81 @@ window.openPdfViewer = function(url, title){
 };
 
 // =============================================================
-// PWA — Service Worker + Install Prompt
+// PWA — Service Worker + Sidebar Install Button
 // =============================================================
 let _pwaInstallPrompt = null;
 
+// Helper: update both sidebar buttons
+function _pwaUpdateButtons(state) {
+  // state: 'hidden' | 'ready' | 'installed'
+  ['pwa-btn-student', 'pwa-btn-admin'].forEach(function(id) {
+    const btn = document.getElementById(id);
+    if (!btn) return;
+    btn.classList.remove('pwa-ready', 'pwa-installed');
+    if (state === 'ready') {
+      btn.classList.add('pwa-ready');
+      btn.textContent = '📲 Install App';
+      btn.disabled = false;
+    } else if (state === 'installed') {
+      btn.classList.add('pwa-installed');
+      btn.textContent = '✅ App Installed';
+      btn.disabled = true;
+    }
+    // 'hidden' = no class = display:none (default)
+  });
+}
+
 // Register service worker
-if('serviceWorker' in navigator){
-  window.addEventListener('load', function(){
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function() {
     navigator.serviceWorker.register('/service-worker.js')
-      .then(function(reg){
-        console.log('[BCI PWA] Service worker registered:', reg.scope);
+      .then(function(reg) {
+        console.log('[BCI PWA] SW registered:', reg.scope);
       })
-      .catch(function(err){
-        console.log('[BCI PWA] Service worker registration failed:', err);
+      .catch(function(err) {
+        console.log('[BCI PWA] SW registration failed:', err);
       });
   });
 }
 
-// Capture install prompt
-window.addEventListener('beforeinstallprompt', function(e){
+// Capture install prompt — this fires when browser decides app is installable
+window.addEventListener('beforeinstallprompt', function(e) {
   e.preventDefault();
   _pwaInstallPrompt = e;
-  // Show banner after 3 seconds if user hasn't dismissed it before
-  if(!localStorage.getItem('pwa-banner-dismissed')){
-    setTimeout(function(){
-      const banner = document.getElementById('pwa-install-banner');
-      if(banner) banner.classList.add('show');
-    }, 3000);
+  // Only show if not already installed
+  if (!window.matchMedia('(display-mode: standalone)').matches) {
+    _pwaUpdateButtons('ready');
   }
 });
 
-function pwaInstall(){
-  if(!_pwaInstallPrompt) return;
+// Install button click
+function pwaInstall() {
+  if (!_pwaInstallPrompt) return;
   _pwaInstallPrompt.prompt();
-  _pwaInstallPrompt.userChoice.then(function(choice){
-    if(choice.outcome === 'accepted'){
-      console.log('[BCI PWA] User accepted install');
+  _pwaInstallPrompt.userChoice.then(function(choice) {
+    if (choice.outcome === 'accepted') {
+      _pwaUpdateButtons('installed');
+      setTimeout(function() { _pwaUpdateButtons('hidden'); }, 3000);
     }
     _pwaInstallPrompt = null;
-    pwaDismiss();
   });
 }
 
-function pwaDismiss(){
-  const banner = document.getElementById('pwa-install-banner');
-  if(banner) banner.classList.remove('show');
-  localStorage.setItem('pwa-banner-dismissed', '1');
-}
-
-// Hide banner if already installed
-window.addEventListener('appinstalled', function(){
-  pwaDismiss();
+// App was installed via browser menu or another path
+window.addEventListener('appinstalled', function() {
+  _pwaInstallPrompt = null;
+  _pwaUpdateButtons('installed');
+  setTimeout(function() { _pwaUpdateButtons('hidden'); }, 3000);
   console.log('[BCI PWA] App installed');
 });
+
+// If already running as installed PWA, hide button
+if (window.matchMedia('(display-mode: standalone)').matches) {
+  // DOM may not be ready yet — wait
+  document.addEventListener('DOMContentLoaded', function() {
+    _pwaUpdateButtons('hidden');
+  });
+}
 
 </script>
 </body>
