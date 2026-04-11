@@ -158,7 +158,7 @@
 <!-- PWA Manifest -->
 <link rel="manifest" href="/manifest.json">
 <meta name="theme-color" content="#00d4ff">
-<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="BCI">
 
@@ -15344,10 +15344,10 @@ window.openPdfViewer = function(url, title){
 // PWA — Service Worker + Sidebar Install Button
 // =============================================================
 let _pwaInstallPrompt = null;
+let _pwaEventPending  = false; // fired before DOM was ready
 
 // Helper: update both sidebar buttons
 function _pwaUpdateButtons(state) {
-  // state: 'hidden' | 'ready' | 'installed'
   ['pwa-btn-student', 'pwa-btn-admin'].forEach(function(id) {
     const btn = document.getElementById(id);
     if (!btn) return;
@@ -15361,7 +15361,7 @@ function _pwaUpdateButtons(state) {
       btn.textContent = '✅ App Installed';
       btn.disabled = true;
     }
-    // 'hidden' = no class = display:none (default)
+    // 'hidden' = no class added = display:none (default via CSS)
   });
 }
 
@@ -15378,12 +15378,44 @@ if ('serviceWorker' in navigator) {
   });
 }
 
-// Capture install prompt — this fires when browser decides app is installable
+// Capture install prompt.
+// This can fire BEFORE sidebar HTML is rendered, so we store it
+// and apply the button state once DOM is fully ready.
 window.addEventListener('beforeinstallprompt', function(e) {
   e.preventDefault();
   _pwaInstallPrompt = e;
-  // Only show if not already installed
+  _pwaEventPending  = true;
+
   if (!window.matchMedia('(display-mode: standalone)').matches) {
+    // If DOM buttons exist already → show immediately
+    const btn = document.getElementById('pwa-btn-student') ||
+                document.getElementById('pwa-btn-admin');
+    if (btn) {
+      _pwaEventPending = false;
+      _pwaUpdateButtons('ready');
+    }
+    // Otherwise _pwaEventPending stays true — applied in DOMContentLoaded below
+  }
+});
+
+// Apply pending state once DOM is fully loaded
+document.addEventListener('DOMContentLoaded', function() {
+  if (_pwaEventPending && _pwaInstallPrompt &&
+      !window.matchMedia('(display-mode: standalone)').matches) {
+    _pwaEventPending = false;
+    _pwaUpdateButtons('ready');
+  }
+  // Hide if already running as installed PWA
+  if (window.matchMedia('(display-mode: standalone)').matches) {
+    _pwaUpdateButtons('hidden');
+  }
+});
+
+// Fallback: also try on window load (covers late-rendering sidebars)
+window.addEventListener('load', function() {
+  if (_pwaEventPending && _pwaInstallPrompt &&
+      !window.matchMedia('(display-mode: standalone)').matches) {
+    _pwaEventPending = false;
     _pwaUpdateButtons('ready');
   }
 });
@@ -15398,24 +15430,18 @@ function pwaInstall() {
       setTimeout(function() { _pwaUpdateButtons('hidden'); }, 3000);
     }
     _pwaInstallPrompt = null;
+    _pwaEventPending  = false;
   });
 }
 
-// App was installed via browser menu or another path
+// App installed via browser menu or another path
 window.addEventListener('appinstalled', function() {
   _pwaInstallPrompt = null;
+  _pwaEventPending  = false;
   _pwaUpdateButtons('installed');
   setTimeout(function() { _pwaUpdateButtons('hidden'); }, 3000);
   console.log('[BCI PWA] App installed');
 });
-
-// If already running as installed PWA, hide button
-if (window.matchMedia('(display-mode: standalone)').matches) {
-  // DOM may not be ready yet — wait
-  document.addEventListener('DOMContentLoaded', function() {
-    _pwaUpdateButtons('hidden');
-  });
-}
 
 </script>
 </body>
