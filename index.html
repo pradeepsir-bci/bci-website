@@ -14898,34 +14898,23 @@ function sLbRowHTML(entry,isMe){
 window.addEventListener('online',()=>attSyncQ());
 
 // =============================================================
-// =============================================================
 // OPEN MATERIAL — Smart URL handler
 //
 // Priority logic:
-//   1. Google Drive link  → extract file ID → /preview (inline viewer)
-//   2. Cloudinary raw URL → Google Docs Viewer wrapper (handles PDF binary)
-//   3. Any other PDF URL  → Google Docs Viewer wrapper
-//   4. Audio/Image/Video  → open directly (no viewer needed)
+//   1. Google Drive link  → extract file ID → /preview (needs Google login)
+//   2. Cloudinary URL     → open directly in new tab (browser renders natively)
+//   3. Any other link     → open directly in new tab
 // =============================================================
 
-function isPdfType(url, type) {
-  if (!url) return false;
-  const docTypes = ['notes','assignment','dpp','previous year paper','syllabus'];
-  if (docTypes.includes((type||'').toLowerCase())) return true;
-  const u = url.toLowerCase();
-  if (u.includes('.pdf')) return true;
-  if (u.includes('/raw/upload/')) return true;
-  return false;
+function isCloudinaryUrl(url) {
+  return url && url.includes('cloudinary.com');
 }
 
 function openMaterial(url, title, type) {
   if (!url) return;
 
   // ── Case 1: Google Drive link ─────────────────────────────
-  // Handles these formats:
-  //   https://drive.google.com/file/d/FILE_ID/view?usp=sharing
-  //   https://drive.google.com/file/d/FILE_ID/view
-  //   https://drive.google.com/open?id=FILE_ID
+  // Needs Google account — opens via /preview
   if (url.includes('drive.google.com')) {
     let fileId = null;
 
@@ -14940,25 +14929,24 @@ function openMaterial(url, title, type) {
     }
 
     if (fileId) {
-      // /preview opens file inline in browser — no download, works on Android
       const previewUrl = 'https://drive.google.com/file/d/' + fileId + '/preview';
       window.open(previewUrl, '_blank', 'noopener,noreferrer');
       return;
     }
-    // If file ID extraction failed, fall through to open directly
+    // File ID extraction failed — open as-is
     window.open(url, '_blank', 'noopener,noreferrer');
     return;
   }
 
-  // ── Case 2 & 3: Cloudinary or any other PDF URL ───────────
-  if (isPdfType(url, type)) {
-    const viewerUrl = 'https://docs.google.com/viewer?embedded=true&url='
-                    + encodeURIComponent(url);
-    window.open(viewerUrl, '_blank', 'noopener,noreferrer');
+  // ── Case 2: Cloudinary URL → open directly ────────────────
+  // File is on Cloudinary CDN — no Google account needed.
+  // Chrome/Android browser renders PDFs natively in new tab.
+  if (isCloudinaryUrl(url)) {
+    window.open(url, '_blank', 'noopener,noreferrer');
     return;
   }
 
-  // ── Case 4: Audio, Image, Video, YouTube, any other link ──
+  // ── Case 3: Any other link → open directly ────────────────
   window.open(url, '_blank', 'noopener,noreferrer');
 }
 
