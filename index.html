@@ -1761,10 +1761,11 @@ input:checked + .slider:before {
 }
 .pwa-install-sidebar-btn.pwa-installed {
   display: flex;
-  border-color: var(--success);
-  color: var(--success);
-  cursor: default;
-  opacity: 0.7;
+  border-color: var(--border);
+  color: var(--text-dim);
+  cursor: not-allowed;
+  opacity: 0.5;
+  pointer-events: none;
 }
 
 </style>
@@ -14898,10 +14899,16 @@ window.addEventListener('online',()=>attSyncQ());
 
 // =============================================================
 // =============================================================
-// OPEN MATERIAL — Google Docs Viewer for PDFs, direct for others
+// OPEN MATERIAL — Smart URL handler
+//
+// Priority logic:
+//   1. Google Drive link  → extract file ID → /preview (inline viewer)
+//   2. Cloudinary raw URL → Google Docs Viewer wrapper (handles PDF binary)
+//   3. Any other PDF URL  → Google Docs Viewer wrapper
+//   4. Audio/Image/Video  → open directly (no viewer needed)
 // =============================================================
 
-function isPdfLink(url, type) {
+function isPdfType(url, type) {
   if (!url) return false;
   const docTypes = ['notes','assignment','dpp','previous year paper','syllabus'];
   if (docTypes.includes((type||'').toLowerCase())) return true;
@@ -14913,22 +14920,55 @@ function isPdfLink(url, type) {
 
 function openMaterial(url, title, type) {
   if (!url) return;
-  if (isPdfLink(url, type)) {
-    // Google Docs Viewer — opens PDF in browser, no download, works on Android
-    const viewerUrl = 'https://docs.google.com/viewer?embedded=true&url=' + encodeURIComponent(url);
-    window.open(viewerUrl, '_blank', 'noopener,noreferrer');
-  } else {
-    // Audio, Image, Video, Google Drive etc — open directly
+
+  // ── Case 1: Google Drive link ─────────────────────────────
+  // Handles these formats:
+  //   https://drive.google.com/file/d/FILE_ID/view?usp=sharing
+  //   https://drive.google.com/file/d/FILE_ID/view
+  //   https://drive.google.com/open?id=FILE_ID
+  if (url.includes('drive.google.com')) {
+    let fileId = null;
+
+    // Format: /file/d/FILE_ID/
+    const matchPath = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+    if (matchPath) fileId = matchPath[1];
+
+    // Format: ?id=FILE_ID or &id=FILE_ID
+    if (!fileId) {
+      const matchParam = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+      if (matchParam) fileId = matchParam[1];
+    }
+
+    if (fileId) {
+      // /preview opens file inline in browser — no download, works on Android
+      const previewUrl = 'https://drive.google.com/file/d/' + fileId + '/preview';
+      window.open(previewUrl, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    // If file ID extraction failed, fall through to open directly
     window.open(url, '_blank', 'noopener,noreferrer');
+    return;
   }
+
+  // ── Case 2 & 3: Cloudinary or any other PDF URL ───────────
+  if (isPdfType(url, type)) {
+    const viewerUrl = 'https://docs.google.com/viewer?embedded=true&url='
+                    + encodeURIComponent(url);
+    window.open(viewerUrl, '_blank', 'noopener,noreferrer');
+    return;
+  }
+
+  // ── Case 4: Audio, Image, Video, YouTube, any other link ──
+  window.open(url, '_blank', 'noopener,noreferrer');
 }
 
+
+// =============================================================
 // PWA — Service Worker + Sidebar Install Button
 // =============================================================
 let _pwaInstallPrompt = null;
-let _pwaEventPending  = false; // fired before DOM was ready
 
-// Helper: update both sidebar buttons
+// ── Update both sidebar buttons ───────────────────────────────
 function _pwaUpdateButtons(state) {
   ['pwa-btn-student', 'pwa-btn-admin'].forEach(function(id) {
     const btn = document.getElementById(id);
@@ -14936,18 +14976,34 @@ function _pwaUpdateButtons(state) {
     btn.classList.remove('pwa-ready', 'pwa-installed');
     if (state === 'ready') {
       btn.classList.add('pwa-ready');
-      btn.textContent = '📲 Install App';
+      btn.innerHTML = '📲 Install App';
       btn.disabled = false;
     } else if (state === 'installed') {
       btn.classList.add('pwa-installed');
-      btn.textContent = '✅ App Installed';
+      btn.innerHTML = '✅ Installed';
       btn.disabled = true;
     }
-    // 'hidden' = no class added = display:none (default via CSS)
+    // 'hidden' → no class → display:none via CSS
   });
 }
 
-// Register service worker
+// ── Apply correct state right now based on current conditions ──
+function _pwaApplyState() {
+  // Already installed and running as PWA → show faded Installed
+  if (window.matchMedia('(display-mode: standalone)').matches) {
+    _pwaUpdateButtons('installed');
+    return;
+  }
+  // Prompt available → show Install button
+  if (_pwaInstallPrompt) {
+    _pwaUpdateButtons('ready');
+    return;
+  }
+  // No prompt yet → hide (default) — browser hasn't decided eligibility yet
+  _pwaUpdateButtons('hidden');
+}
+
+// ── Register service worker ───────────────────────────────────
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', function() {
     navigator.serviceWorker.register('/service-worker.js')
@@ -14960,69 +15016,64 @@ if ('serviceWorker' in navigator) {
   });
 }
 
-// Capture install prompt.
-// This can fire BEFORE sidebar HTML is rendered, so we store it
-// and apply the button state once DOM is fully ready.
+// ── Capture install prompt ────────────────────────────────────
+// Chrome fires this once per session. We store it permanently
+// so we can show the button whenever the sidebar is visible.
 window.addEventListener('beforeinstallprompt', function(e) {
   e.preventDefault();
   _pwaInstallPrompt = e;
-  _pwaEventPending  = true;
-
-  if (!window.matchMedia('(display-mode: standalone)').matches) {
-    // If DOM buttons exist already → show immediately
-    const btn = document.getElementById('pwa-btn-student') ||
-                document.getElementById('pwa-btn-admin');
-    if (btn) {
-      _pwaEventPending = false;
-      _pwaUpdateButtons('ready');
-    }
-    // Otherwise _pwaEventPending stays true — applied in DOMContentLoaded below
-  }
+  console.log('[BCI PWA] Install prompt captured');
+  _pwaApplyState();
 });
 
-// Apply pending state once DOM is fully loaded
-document.addEventListener('DOMContentLoaded', function() {
-  if (_pwaEventPending && _pwaInstallPrompt &&
-      !window.matchMedia('(display-mode: standalone)').matches) {
-    _pwaEventPending = false;
-    _pwaUpdateButtons('ready');
-  }
-  // Hide if already running as installed PWA
-  if (window.matchMedia('(display-mode: standalone)').matches) {
-    _pwaUpdateButtons('hidden');
-  }
-});
+// ── Apply state on every page load ───────────────────────────
+document.addEventListener('DOMContentLoaded', _pwaApplyState);
+window.addEventListener('load', _pwaApplyState);
 
-// Fallback: also try on window load (covers late-rendering sidebars)
-window.addEventListener('load', function() {
-  if (_pwaEventPending && _pwaInstallPrompt &&
-      !window.matchMedia('(display-mode: standalone)').matches) {
-    _pwaEventPending = false;
-    _pwaUpdateButtons('ready');
+// ── Re-apply when SPA navigates (student/admin page switches) ─
+// We patch showStudentPage and showAdminPage to re-check state
+// after the sidebar becomes visible with the correct buttons.
+(function() {
+  function patchNavFn(fnName) {
+    var orig = window[fnName];
+    if (typeof orig !== 'function') return;
+    window[fnName] = function() {
+      var result = orig.apply(this, arguments);
+      // Small delay to ensure sidebar DOM is fully shown
+      setTimeout(_pwaApplyState, 50);
+      return result;
+    };
   }
-});
+  // Patch after all scripts have loaded
+  window.addEventListener('load', function() {
+    patchNavFn('showStudentPage');
+    patchNavFn('showAdminPage');
+  });
+})();
 
-// Install button click
+// ── Install button click ──────────────────────────────────────
 function pwaInstall() {
-  if (!_pwaInstallPrompt) return;
+  if (!_pwaInstallPrompt) {
+    console.log('[BCI PWA] No install prompt available');
+    return;
+  }
   _pwaInstallPrompt.prompt();
   _pwaInstallPrompt.userChoice.then(function(choice) {
+    console.log('[BCI PWA] User choice:', choice.outcome);
     if (choice.outcome === 'accepted') {
+      _pwaInstallPrompt = null;
       _pwaUpdateButtons('installed');
-      setTimeout(function() { _pwaUpdateButtons('hidden'); }, 3000);
-    }
-    _pwaInstallPrompt = null;
-    _pwaEventPending  = false;
-  });
+    } else {
+      // User dismissed — keep button visible so they can try again
+      _pwaUpdateButtons('ready');
+    }  });
 }
 
-// App installed via browser menu or another path
+// ── App installed via browser menu ───────────────────────────
 window.addEventListener('appinstalled', function() {
   _pwaInstallPrompt = null;
-  _pwaEventPending  = false;
   _pwaUpdateButtons('installed');
-  setTimeout(function() { _pwaUpdateButtons('hidden'); }, 3000);
-  console.log('[BCI PWA] App installed');
+  console.log('[BCI PWA] App installed successfully');
 });
 
 </script>
