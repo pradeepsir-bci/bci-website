@@ -14901,20 +14901,26 @@ window.addEventListener('online',()=>attSyncQ());
 // OPEN MATERIAL — Smart URL handler
 //
 // Priority logic:
-//   1. Google Drive link  → extract file ID → /preview (needs Google login)
-//   2. Cloudinary URL     → open directly in new tab (browser renders natively)
-//   3. Any other link     → open directly in new tab
+//   1. Google Drive link  → extract file ID → /preview (inline, no download)
+//   2. Cloudinary URL     → Google Docs Viewer (prevents download prompt)
+//   3. Audio/Image/Video  → open directly (no viewer needed)
+//   4. Any other URL      → Google Docs Viewer (safe default for documents)
 // =============================================================
 
-function isCloudinaryUrl(url) {
-  return url && url.includes('cloudinary.com');
+function isAudioVideoImage(url, type) {
+  if (!url) return false;
+  const mediaTypes = ['audio', 'video', 'image'];
+  if (mediaTypes.includes((type||'').toLowerCase())) return true;
+  const u = url.toLowerCase();
+  return u.includes('youtube.com') || u.includes('youtu.be') ||
+         u.match(/\.(mp3|mp4|wav|ogg|m4a|aac|webm|jpg|jpeg|png|gif|webp)(\?|$)/);
 }
 
 function openMaterial(url, title, type) {
   if (!url) return;
 
   // ── Case 1: Google Drive link ─────────────────────────────
-  // Needs Google account — opens via /preview
+  // Extract file ID → open via /preview (renders inline, no download)
   if (url.includes('drive.google.com')) {
     let fileId = null;
 
@@ -14929,25 +14935,29 @@ function openMaterial(url, title, type) {
     }
 
     if (fileId) {
+      // /preview opens file inline in browser — no download, no app needed
       const previewUrl = 'https://drive.google.com/file/d/' + fileId + '/preview';
       window.open(previewUrl, '_blank', 'noopener,noreferrer');
       return;
     }
-    // File ID extraction failed — open as-is
+    // File ID extraction failed — wrap in Google Docs Viewer
+    const viewerUrl = 'https://docs.google.com/viewer?embedded=true&url=' + encodeURIComponent(url);
+    window.open(viewerUrl, '_blank', 'noopener,noreferrer');
+    return;
+  }
+
+  // ── Case 2: Audio / Video / Image / YouTube → open directly ──
+  // These don't need a viewer — browser handles them natively
+  if (isAudioVideoImage(url, type)) {
     window.open(url, '_blank', 'noopener,noreferrer');
     return;
   }
 
-  // ── Case 2: Cloudinary URL → open directly ────────────────
-  // File is on Cloudinary CDN — no Google account needed.
-  // Chrome/Android browser renders PDFs natively in new tab.
-  if (isCloudinaryUrl(url)) {
-    window.open(url, '_blank', 'noopener,noreferrer');
-    return;
-  }
-
-  // ── Case 3: Any other link → open directly ────────────────
-  window.open(url, '_blank', 'noopener,noreferrer');
+  // ── Case 3: Cloudinary + all other document URLs ──────────
+  // Google Docs Viewer prevents download prompt on Android.
+  // Works for Cloudinary PDFs, any other PDF/document URL.
+  const viewerUrl = 'https://docs.google.com/viewer?embedded=true&url=' + encodeURIComponent(url);
+  window.open(viewerUrl, '_blank', 'noopener,noreferrer');
 }
 
 
