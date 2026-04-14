@@ -799,19 +799,29 @@ tbody td {
   margin-top: 2px;
 }
 .sidebar-user {
-  padding: 16px 20px;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-card);
+  padding: 14px 16px;
+  border-bottom: 1px solid rgba(0,212,255,0.15);
+  background: linear-gradient(135deg, rgba(0,212,255,0.07) 0%, rgba(139,92,246,0.05) 100%);
   flex-shrink: 0;
+  position: relative;
+  overflow: hidden;
+}
+.sidebar-user::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--neon-blue), #7c3aed, var(--neon-blue));
 }
 .sidebar-user-name {
-  font-weight: 600;
-  font-size: var(--fs-base);
+  font-weight: 700;
+  font-size: var(--fs-sm);
   color: var(--text-white);
+  letter-spacing: 0.2px;
 }
 .sidebar-user-role {
-  font-size: var(--fs-xs);
-  color: var(--text-dim);
+  font-size: 11px;
+  color: rgba(0,212,255,0.7);
   margin-top: 2px;
 }
 .sidebar-nav {
@@ -2917,7 +2927,7 @@ function buildPageHTML() {
               <label>Board <span class="required">*</span></label>
               <select class="form-control" id="login-board" onchange="onLoginBoardChange()">
                 <option value="">-- Select Board --</option>
-                <option value="BSEB">📘 BSEB (Bihar Board)</option>
+                <option value="BSEB" selected>📘 BSEB (Bihar Board)</option>
                 <option value="CBSE">📗 CBSE</option>
               </select>
             </div>
@@ -3037,7 +3047,7 @@ function buildPageHTML() {
               <label>Board <span class="required">*</span></label>
               <select class="form-control" id="reg-board" onchange="onRegBoardChange()">
                 <option value="">-- Select Board --</option>
-                <option value="BSEB">📘 BSEB (Bihar Board)</option>
+                <option value="BSEB" selected>📘 BSEB (Bihar Board)</option>
                 <option value="CBSE">📗 CBSE</option>
               </select>
               <div class="form-error" id="err-board">Please select your board</div>
@@ -3817,21 +3827,35 @@ async function loadActiveSessionIntoDropdowns() {
     for (const id of selectors) {
       const select = document.getElementById(id);
       if (!select) continue;
-      select.innerHTML = '<option value="">-- Select Session --</option>';
+      select.innerHTML = '';
       if (snap.empty) {
-        select.innerHTML += '<option value="2026-27">2026-27</option>';
+        select.innerHTML = '<option value="2026-27">2026-27</option>';
       } else {
         snap.forEach(doc => {
           select.innerHTML += `<option value="${doc.id}">${doc.id}</option>`;
         });
       }
+      // Auto-select first (active) session — no blank "Select Session" placeholder
+      if (select.options.length > 0) select.selectedIndex = 0;
     }
   } catch {
     for (const id of selectors) {
       const select = document.getElementById(id);
-      if (select) select.innerHTML = '<option value="2026-27">2026-27</option>';
+      if (select) { select.innerHTML = '<option value="2026-27">2026-27</option>'; select.selectedIndex = 0; }
     }
   }
+  // Auto-select BSEB on login board and load its classes immediately
+  const loginBoard = document.getElementById('login-board');
+  if (loginBoard && !loginBoard.value) {
+    loginBoard.value = 'BSEB';
+  }
+  loadClassesForBoard('BSEB', 'login-class');
+  // Auto-select BSEB on registration board and load its classes immediately
+  const regBoard = document.getElementById('reg-board');
+  if (regBoard && !regBoard.value) {
+    regBoard.value = 'BSEB';
+  }
+  loadClassesForBoard('BSEB', 'reg-class');
 }
 
 // =============================================================
@@ -4152,25 +4176,31 @@ function buildStudentDashboardHTML() {
 
       <!-- Logged in student info -->
       <div class="sidebar-user">
-        <div style="display:flex; align-items:center; gap:12px; margin-bottom:8px;">
+        <div style="display:flex; align-items:center; gap:10px;">
           <div style="position:relative; flex-shrink:0;">
             <img id="s-sidebar-photo"
                  src="${student.photo || ''}"
-                 style="width:44px;height:44px;border-radius:50%;object-fit:cover;
+                 style="width:46px;height:46px;border-radius:50%;object-fit:cover;
                         border:2px solid var(--neon-blue);
+                        box-shadow:0 0 10px rgba(0,212,255,0.4);
                         display:${student.photo ? 'block' : 'none'};">
             <span id="s-sidebar-emoji"
-                  style="width:44px;height:44px;border-radius:50%;
-                         background:var(--bg-card2);border:2px solid var(--border);
+                  style="width:46px;height:46px;border-radius:50%;
+                         background:rgba(0,212,255,0.1);border:2px solid rgba(0,212,255,0.4);
                          display:${student.photo ? 'none' : 'flex'};
                          align-items:center;justify-content:center;font-size:22px;">👤</span>
           </div>
-          <div>
-            <div class="sidebar-user-name">${student.name}</div>
-            <div class="sidebar-user-role">
-              🎓 ${className} &nbsp;|&nbsp; Roll: ${student.roll || '—'}
+          <div style="min-width:0;flex:1;">
+            <div class="sidebar-user-name" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+              ${student.name}
             </div>
-            <div style="font-size:var(--fs-xs);color:var(--text-dim);margin-top:2px;">📅 ${student.session || '—'}</div>
+            <div class="sidebar-user-role">
+              🎓 ${className} &nbsp;·&nbsp; Roll: ${student.roll || '—'}
+            </div>
+            <div style="font-size:10px;color:var(--text-dim);margin-top:2px;display:flex;align-items:center;gap:4px;">
+              <span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#00ff88;flex-shrink:0;"></span>
+              ${student.session || '—'}
+            </div>
           </div>
         </div>
       </div>
@@ -4328,6 +4358,25 @@ function buildStudentDashboardHTML() {
             </div>
           </div>
 
+        </div>
+
+        <!-- My ID Card -->
+        <div class="card" style="margin-bottom:24px;background:linear-gradient(135deg,rgba(0,212,255,0.06),rgba(139,92,246,0.06));border:1px solid rgba(0,212,255,0.2);">
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+            <div>
+              <div style="font-family:'Rajdhani',sans-serif;font-weight:700;font-size:var(--fs-md);color:var(--text-white);margin-bottom:4px;">
+                🪪 Student ID Card
+              </div>
+              <div style="font-size:var(--fs-sm);color:var(--text-muted);">View, download or share your digital ID card</div>
+            </div>
+            <button onclick="showStudentIdCard()"
+              style="padding:10px 20px;background:linear-gradient(135deg,var(--neon-blue),#7c3aed);
+                     border:none;border-radius:var(--radius-sm);color:#000;font-weight:700;
+                     font-family:'Rajdhani',sans-serif;font-size:var(--fs-sm);cursor:pointer;
+                     white-space:nowrap;-webkit-tap-highlight-color:transparent;">
+              🪪 View ID Card
+            </button>
+          </div>
         </div>
 
         <!-- Latest notices on dashboard -->
@@ -4838,6 +4887,35 @@ function buildStudentDashboardHTML() {
     </main><!-- end main-content -->
   </div><!-- end app-layout -->
   </div><!-- end dashboard-area -->
+
+  <!-- ── Student ID Card Modal ── -->
+  <div id="modal-id-card" class="modal-overlay" style="display:none;position:fixed;inset:0;z-index:9999;
+       background:rgba(0,0,0,0.85);display:none;align-items:center;justify-content:center;padding:16px;">
+    <div style="width:100%;max-width:360px;position:relative;">
+      <!-- Close -->
+      <button onclick="document.getElementById('modal-id-card').style.display='none'"
+        style="position:absolute;top:-40px;right:0;background:none;border:none;color:#fff;
+               font-size:24px;cursor:pointer;z-index:10;">✕</button>
+      <!-- Card canvas area -->
+      <canvas id="id-card-canvas" style="width:100%;border-radius:16px;display:block;
+              box-shadow:0 0 40px rgba(0,212,255,0.3);"></canvas>
+      <!-- Action buttons -->
+      <div style="display:flex;gap:10px;margin-top:14px;">
+        <button onclick="downloadIdCard()"
+          style="flex:1;padding:12px;background:linear-gradient(135deg,var(--neon-blue),#0099cc);
+                 border:none;border-radius:10px;color:#000;font-weight:700;font-size:15px;
+                 font-family:'Rajdhani',sans-serif;cursor:pointer;">
+          ⬇️ Download
+        </button>
+        <button onclick="shareIdCard()"
+          style="flex:1;padding:12px;background:linear-gradient(135deg,#7c3aed,#a855f7);
+                 border:none;border-radius:10px;color:#fff;font-weight:700;font-size:15px;
+                 font-family:'Rajdhani',sans-serif;cursor:pointer;">
+          📤 Share
+        </button>
+      </div>
+    </div>
+  </div>
 
   `); // end insertAdjacentHTML
 }
@@ -5356,6 +5434,18 @@ async function loadStudentRecentMaterials() {
       })
       .slice(0, 3);
 
+    // Build folder name map for the materials' folderIds
+    const folderIds = [...new Set(sorted.map(m => m.folderId).filter(id => id && id !== 'root'))];
+    const folderNames = {};
+    if(folderIds.length){
+      await Promise.all(folderIds.map(async fid => {
+        try{
+          const fdoc = await db.collection('folders').doc(fid).get();
+          if(fdoc.exists) folderNames[fid] = fdoc.data().name || '';
+        }catch{}
+      }));
+    }
+
     // ⚠️ FIX 3: Notification-style cards that navigate to Study Materials
     const typeIcons = {
       'Notes': '📝',
@@ -5367,7 +5457,10 @@ async function loadStudentRecentMaterials() {
     
     container.innerHTML = `
       <div style="display:flex; flex-direction:column; gap:10px;">
-        ${sorted.map(m => `
+        ${sorted.map(m => {
+          const folderName = (m.folderId && m.folderId !== 'root' && folderNames[m.folderId])
+            ? folderNames[m.folderId] : null;
+          return `
           <div onclick="showStudentPage('s-page-materials'); loadStudentFolders();" style="
             padding:14px 16px;
             background:var(--bg-card);
@@ -5390,6 +5483,7 @@ async function loadStudentRecentMaterials() {
               </div>
               <div style="font-size:var(--fs-xs); color:var(--text-dim); display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
                 <span class="badge badge-blue" style="font-size:10px; padding:3px 8px;">${m.type || 'Material'}</span>
+                ${folderName ? `<span style="display:inline-flex;align-items:center;gap:3px;background:rgba(255,170,0,0.1);border:1px solid rgba(255,170,0,0.3);color:#ffaa00;border-radius:4px;padding:2px 7px;font-size:10px;font-weight:600;">📁 ${folderName}</span>` : ''}
                 <span>📅 ${formatDate(m.createdAt)}</span>
               </div>
             </div>
@@ -5397,8 +5491,8 @@ async function loadStudentRecentMaterials() {
             <div style="color:var(--neon-blue); font-size:var(--fs-xs); flex-shrink:0;">
               View →
             </div>
-          </div>
-        `).join('')}
+          </div>`;
+        }).join('')}
         
         <button onclick="showStudentPage('s-page-materials'); loadStudentFolders();" class="btn btn-outline btn-sm" style="margin-top:4px;">
           📚 View All Materials
@@ -6375,7 +6469,7 @@ function buildAdminDashboardHTML() {
        ID: dashboard-area
        Contains sidebar + all admin pages
        ===================================================== -->
-  <div id="dashboard-area" style="display:none; max-width:100%; overflow-x:hidden;">
+  <div id="admin-dashboard-area" style="display:none; max-width:100%; overflow-x:hidden;">
   <div class="app-layout">
 
     <!-- ── ADMIN SIDEBAR ── -->
@@ -7770,7 +7864,6 @@ function buildAdminDashboardHTML() {
             </div>
           </div>
         </div>
-        </div>
 
       </div><!-- end a-page-attendance -->
 
@@ -7785,18 +7878,18 @@ function buildAdminDashboardHTML() {
         <!-- Category tabs -->
         <div style="display:flex;gap:0;margin-bottom:24px;border-bottom:2px solid var(--border);">
           <div id="alb-cat-attendance" onclick="aLbSwitchCategory('attendance')"
-            style="padding:12px 20px;font-family:'Rajdhani',sans-serif;font-weight:700;font-size:var(--fs-base);
+            style="padding:10px 14px;font-family:'Rajdhani',sans-serif;font-weight:700;font-size:var(--fs-sm);
                    cursor:pointer;color:var(--neon-blue);border-bottom:3px solid var(--neon-blue);
-                   margin-bottom:-2px;transition:all 0.15s;">
+                   margin-bottom:-2px;transition:all 0.15s;white-space:nowrap;">
             📊 Attendance Rankings
           </div>
           <div id="alb-cat-exam" onclick="aLbSwitchCategory('exam')"
-            style="padding:12px 20px;font-family:'Rajdhani',sans-serif;font-weight:700;font-size:var(--fs-base);
+            style="padding:10px 14px;font-family:'Rajdhani',sans-serif;font-weight:700;font-size:var(--fs-sm);
                    cursor:pointer;color:var(--text-dim);border-bottom:3px solid transparent;
-                   margin-bottom:-2px;transition:all 0.15s;position:relative;">
+                   margin-bottom:-2px;transition:all 0.15s;position:relative;white-space:nowrap;">
             📝 Exam Rankings
             <span style="font-size:9px;font-weight:700;background:rgba(255,170,0,0.15);border:1px solid #ffaa00;
-                         color:#ffaa00;padding:1px 5px;border-radius:4px;margin-left:6px;vertical-align:middle;">SOON</span>
+                         color:#ffaa00;padding:1px 5px;border-radius:4px;margin-left:4px;vertical-align:middle;">SOON</span>
           </div>
         </div>
 
@@ -7873,7 +7966,7 @@ function buildAdminDashboardHTML() {
 
     </main><!-- end admin main-content -->
   </div><!-- end admin app-layout -->
-  </div><!-- end admin dashboard-area -->
+  </div><!-- end admin-dashboard-area -->
 
 
   <!-- =====================================================
@@ -8129,7 +8222,7 @@ function buildAdminDashboardHTML() {
 // =============================================================
 function showAdminPage(pageId, addHistory = true) {
   // Remove active from ALL admin pages (some may be outside #dashboard-area)
-  document.querySelectorAll('#dashboard-area .page').forEach(p => {
+  document.querySelectorAll('#admin-dashboard-area .page').forEach(p => {
     p.classList.remove('active');
   });
   const page = document.getElementById(pageId);
@@ -8327,7 +8420,7 @@ async function initAdminDashboard() {
   // This prevents the "logo missing on first load, shows after refresh" bug.
   await loadInstituteInfo();
 
-  document.getElementById('dashboard-area').style.display = 'block';
+  document.getElementById('admin-dashboard-area').style.display = 'block';
 
   // Push initial history state so back button works from the start
   history.pushState({ page: 'a-page-home', area: 'admin' }, '', '#a-page-home');
@@ -15514,6 +15607,297 @@ function sLbRowHTML(entry,isMe){
 }
 
 window.addEventListener('online',()=>attSyncQ());
+
+// =============================================================
+// STUDENT ID CARD — Canvas-based futuristic digital ID
+// =============================================================
+function showStudentIdCard(){
+  const modal = document.getElementById('modal-id-card');
+  if(!modal) return;
+  modal.style.display = 'flex';
+  generateIdCard();
+}
+
+async function generateIdCard(){
+  const student = AppState.currentUser;
+  if(!student) return;
+  const canvas = document.getElementById('id-card-canvas');
+  if(!canvas) return;
+
+  const inst      = window._instituteData || {};
+  const instName  = (inst.name  || 'Brilliant Coaching Institute').toUpperCase();
+  const instShort = inst.shortName || 'B.C.I';
+  const instCity  = inst.city  || 'Buxar, Bihar';
+  const instPhone = inst.phone || '6206437776';
+
+  // Get logo — try sidebar img first (hardcoded), then Firebase, then fallback
+  let logoSrc = null;
+  try{
+    // 1. Try to get from sidebar img (hardcoded base64 logo)
+    const sidebarLogo = document.querySelector('.sidebar-logo');
+    if(sidebarLogo && sidebarLogo.src && !sidebarLogo.src.endsWith('undefined') && sidebarLogo.naturalWidth > 0){
+      logoSrc = sidebarLogo.src;
+    }
+    // 2. Try Firebase institute data (uploaded logo)
+    if(!logoSrc){
+      const instLogo = window._instituteData?.logo;
+      if(instLogo && !instLogo.startsWith('data:image/svg')){
+        logoSrc = instLogo;
+      }
+    }
+    // 3. Try fetch fresh from Firestore
+    if(!logoSrc){
+      const doc = await db.collection('admin').doc('institute').get();
+      if(doc.exists && doc.data().logo && !doc.data().logo.startsWith('data:image/svg')){
+        logoSrc = doc.data().logo;
+      }
+    }
+  }catch(e){ logoSrc = null; }
+
+  const className = AppState.currentClassName || getClassName(student.class) || 'Class —';
+  const board     = (student.board || 'BSEB').toUpperCase();
+  const studentId = student.studentId || student.id || '—';
+  const roll      = student.roll || student.rollNo || '—';
+  const session   = student.session || '—';
+  const sessEnd   = session ? (parseInt((session||'0-0').split('-')[1]||'0') + 2000) : null;
+  const validTill = sessEnd ? 'Valid Till: March ' + sessEnd : '';
+
+  // Portrait ID card: 54mm × 86mm at 96dpi → 204 × 325px → scale 3x
+  const SCALE = 3;
+  const W = 340, H = 496;
+  canvas.width  = W * SCALE;
+  canvas.height = H * SCALE;
+  canvas.style.width  = W + 'px';
+  canvas.style.height = H + 'px';
+  const ctx = canvas.getContext('2d');
+  ctx.scale(SCALE, SCALE);
+
+  // ── Background ──
+  const bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0,   '#0a1628');
+  bg.addColorStop(1,   '#060d1a');
+  ctx.fillStyle = bg;
+  ctx.beginPath(); ctx.roundRect(0, 0, W, H, 14); ctx.fill();
+
+  // ── Top gradient bar ──
+  const topBar = ctx.createLinearGradient(0, 0, W, 0);
+  topBar.addColorStop(0, '#00d4ff'); topBar.addColorStop(0.5, '#7c3aed'); topBar.addColorStop(1, '#00d4ff');
+  ctx.fillStyle = topBar;
+  ctx.beginPath(); ctx.roundRect(0, 0, W, 5, [14,14,0,0]); ctx.fill();
+
+  // ── Bottom gradient bar ──
+  ctx.fillStyle = topBar;
+  ctx.beginPath(); ctx.roundRect(0, H-4, W, 4, [0,0,14,14]); ctx.fill();
+
+  // ── Subtle glow top-right ──
+  const glow = ctx.createRadialGradient(W, 0, 0, W, 0, 180);
+  glow.addColorStop(0, 'rgba(0,212,255,0.08)'); glow.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = glow; ctx.fillRect(0, 0, W, H);
+
+  // ── HEADER SECTION (top 100px) ──
+  // Logo
+  const logoSize = 44, logoX = 14, logoY = 12;
+  if(logoSrc){
+    try{
+      const logoImg = await loadImage(logoSrc);
+      ctx.save();
+      ctx.beginPath(); ctx.arc(logoX+logoSize/2, logoY+logoSize/2, logoSize/2, 0, Math.PI*2); ctx.clip();
+      ctx.drawImage(logoImg, logoX, logoY, logoSize, logoSize);
+      ctx.restore();
+      // Circle border
+      ctx.strokeStyle = 'rgba(0,212,255,0.6)'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(logoX+logoSize/2, logoY+logoSize/2, logoSize/2, 0, Math.PI*2); ctx.stroke();
+    }catch{ drawLogoFallback(ctx, logoX, logoY, logoSize, instShort); }
+  } else {
+    drawLogoFallback(ctx, logoX, logoY, logoSize, instShort);
+  }
+
+  // Institute name next to logo
+  const tx = logoX + logoSize + 10;
+  ctx.fillStyle = '#00d4ff';
+  ctx.font = 'bold 16px Rajdhani, sans-serif';
+  ctx.fillText(instShort, tx, logoY + 16);
+  ctx.fillStyle = 'rgba(255,255,255,0.9)';
+  ctx.font = 'bold 10px Rajdhani, sans-serif';
+  // Wrap long name
+  const maxW = W - tx - 10;
+  wrapText(ctx, instName, tx, logoY + 30, maxW, 12);
+  ctx.fillStyle = 'rgba(255,255,255,0.45)';
+  ctx.font = '9px Arial, sans-serif';
+  ctx.fillText(instCity, tx, logoY + 54);
+
+  // Divider
+  ctx.strokeStyle = 'rgba(0,212,255,0.25)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(14, 68); ctx.lineTo(W-14, 68); ctx.stroke();
+
+  // "STUDENT IDENTITY CARD" label
+  ctx.fillStyle = 'rgba(0,212,255,0.8)';
+  ctx.font = 'bold 9px Rajdhani, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('— STUDENT IDENTITY CARD —', W/2, 81);
+  ctx.textAlign = 'left';
+
+  // ── PHOTO (centered) ──
+  const pW=100, pH=122, pX=(W-pW)/2, pY=88, pR=8;
+  // Glow border
+  ctx.shadowColor='#00d4ff'; ctx.shadowBlur=12;
+  ctx.strokeStyle='rgba(0,212,255,0.7)'; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.roundRect(pX, pY, pW, pH, pR); ctx.stroke();
+  ctx.shadowBlur=0;
+  // Photo
+  ctx.save();
+  ctx.beginPath(); ctx.roundRect(pX, pY, pW, pH, pR); ctx.clip();
+  if(student.photo){
+    try{
+      const pImg = await loadImage(student.photo);
+      ctx.drawImage(pImg, pX, pY, pW, pH);
+    }catch{ drawPhotoPlaceholder(ctx, pX, pY, pW, pH); }
+  } else { drawPhotoPlaceholder(ctx, pX, pY, pW, pH); }
+  ctx.restore();
+
+  // ── STUDENT NAME (below photo, centered) ──
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold 15px Rajdhani, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText((student.name || '—').split(' ').map(w=>w.charAt(0).toUpperCase()+w.slice(1)).join(' '), W/2, pY + pH + 19);
+  ctx.textAlign = 'left';
+
+  // ── DATA FIELDS ──
+  const fy = pY + pH + 30, lh = 32, lx = 18, rVal = 18;
+
+  function field(label, value, y, color){
+    ctx.fillStyle = 'rgba(0,212,255,0.55)';
+    ctx.font = '8px Rajdhani, sans-serif';
+    ctx.fillText(label, lx, y);
+    ctx.fillStyle = color || 'rgba(255,255,255,0.92)';
+    ctx.font = 'bold 13px Rajdhani, sans-serif';
+    ctx.fillText(value, lx, y + 13);
+    // subtle underline
+    ctx.strokeStyle = 'rgba(255,255,255,0.05)'; ctx.lineWidth = 0.5;
+    ctx.beginPath(); ctx.moveTo(lx, y+18); ctx.lineTo(W-lx, y+18); ctx.stroke();
+  }
+
+  field('STUDENT ID',  studentId, fy,       '#00d4ff');
+  field('CLASS',       className, fy+lh,    '#ffffff');
+  field('BOARD',       board === 'CBSE' ? 'CBSE — Central Board' : 'BSEB — Bihar Board', fy+lh*2, board==='CBSE'?'#00c896':'#4d9fff');
+  field('ROLL NO.',    String(roll),   fy+lh*3, '#a78bfa');
+  field('SESSION',     session,        fy+lh*4, '#ffffff');
+
+  // ── VALID TILL badge ──
+  if(validTill){
+    const vy = fy + lh*5 + 4;
+    ctx.fillStyle = 'rgba(0,212,255,0.1)';
+    ctx.strokeStyle = 'rgba(0,212,255,0.5)'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.roundRect(lx, vy, W-lx*2, 22, 5); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#00d4ff'; ctx.font = 'bold 11px Rajdhani, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(validTill, W/2, vy+15);
+    ctx.textAlign = 'left';
+  }
+
+  // ── BOTTOM STRIP ──
+  ctx.fillStyle = 'rgba(0,212,255,0.04)';
+  ctx.fillRect(0, H-42, W, 38);
+  ctx.strokeStyle = 'rgba(0,212,255,0.15)'; ctx.lineWidth=0.5;
+  ctx.beginPath(); ctx.moveTo(0,H-42); ctx.lineTo(W,H-42); ctx.stroke();
+  ctx.fillStyle = 'rgba(255,255,255,0.45)';
+  ctx.font = '9px Arial, sans-serif';
+  ctx.fillText('📞 ' + instPhone, lx, H-26);
+  ctx.fillText('🌐 bcibuxar.netlify.app', lx, H-12);
+
+  // ── Left accent bar ──
+  const leftBar = ctx.createLinearGradient(0, 80, 0, H-40);
+  leftBar.addColorStop(0, 'rgba(0,212,255,0.4)');
+  leftBar.addColorStop(0.5, 'rgba(139,92,246,0.4)');
+  leftBar.addColorStop(1, 'rgba(0,212,255,0.1)');
+  ctx.fillStyle = leftBar;
+  ctx.fillRect(0, 80, 3, H-120);
+
+  // ── Watermark ──
+  ctx.save();
+  ctx.globalAlpha=0.035; ctx.fillStyle='#00d4ff';
+  ctx.font='bold 64px Rajdhani, sans-serif';
+  ctx.textAlign='center';
+  ctx.fillText(instShort, W/2, H/2+20);
+  ctx.restore(); ctx.textAlign='left';
+}
+
+function drawLogoFallback(ctx, x, y, size, text){
+  ctx.fillStyle='rgba(0,212,255,0.15)';
+  ctx.beginPath(); ctx.arc(x+size/2,y+size/2,size/2,0,Math.PI*2); ctx.fill();
+  ctx.strokeStyle='rgba(0,212,255,0.4)'; ctx.lineWidth=1.5;
+  ctx.beginPath(); ctx.arc(x+size/2,y+size/2,size/2,0,Math.PI*2); ctx.stroke();
+  ctx.fillStyle='#00d4ff'; ctx.font='bold 14px Rajdhani,sans-serif';
+  ctx.textAlign='center'; ctx.fillText(text,x+size/2,y+size/2+5); ctx.textAlign='left';
+}
+
+function wrapText(ctx, text, x, y, maxWidth, lineHeight){
+  const words = text.split(' ');
+  let line = '';
+  let lineY = y;
+  for(let w of words){
+    const test = line + w + ' ';
+    if(ctx.measureText(test).width > maxWidth && line){
+      ctx.fillText(line.trim(), x, lineY);
+      line = w + ' ';
+      lineY += lineHeight;
+    } else { line = test; }
+  }
+  ctx.fillText(line.trim(), x, lineY);
+}
+function drawPhotoPlaceholder(ctx, x, y, w, h){
+  ctx.fillStyle = 'rgba(0,212,255,0.06)';
+  ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = 'rgba(0,212,255,0.3)';
+  ctx.font = '52px Arial';
+  ctx.textAlign = 'center';
+  ctx.fillText('👤', x + w/2, y + h/2 + 18);
+  ctx.textAlign = 'left';
+}
+
+function loadImage(src){
+  return new Promise((resolve, reject)=>{
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload  = ()=> resolve(img);
+    img.onerror = ()=> reject();
+    img.src = src;
+  });
+}
+
+function downloadIdCard(){
+  const canvas = document.getElementById('id-card-canvas');
+  if(!canvas) return;
+  const student = AppState.currentUser;
+  const name = (student?.name||'student').replace(/\s+/g,'-').toLowerCase();
+  const link = document.createElement('a');
+  link.download = `BCI-ID-${name}.png`;
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+}
+
+async function shareIdCard(){
+  const canvas = document.getElementById('id-card-canvas');
+  if(!canvas) return;
+  try{
+    canvas.toBlob(async (blob)=>{
+      const file = new File([blob], 'BCI-Student-ID.png', {type:'image/png'});
+      if(navigator.canShare && navigator.canShare({files:[file]})){
+        await navigator.share({
+          title: 'My BCI Student ID Card',
+          text: 'My Student ID Card — Brilliant Coaching Institute, Buxar',
+          files: [file]
+        });
+      } else {
+        // Fallback: download
+        downloadIdCard();
+        showToast('Sharing not supported on this device — downloaded instead.','info',3000);
+      }
+    }, 'image/png');
+  }catch(e){
+    if(e.name!=='AbortError') showToast('Could not share. Try downloading instead.','warning',3000);
+  }
+}
 
 // =============================================================
 // ADMIN LEADERBOARD
