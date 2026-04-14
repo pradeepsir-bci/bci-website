@@ -757,9 +757,10 @@ tbody td {
   position: fixed;
   top: 0;
   left: 0;
-  height: 100vh;
-  overflow-y: auto;
-  z-index: 160;   /* above backdrop (150) and below hamburger btn (300) */
+  height: 100vh;        /* fallback for old Android */
+  height: 100dvh;       /* modern: excludes browser URL bar */
+  overflow: hidden;
+  z-index: 160;
   display: flex;
   flex-direction: column;
   transition: transform 0.3s ease;
@@ -770,9 +771,10 @@ tbody td {
   display: flex;
   align-items: center;
   gap: 12px;
+  flex-shrink: 0;
 }
 @media (max-width: 768px) {
-  .sidebar-brand { padding-left: 60px; } /* clear the hamburger button */
+  .sidebar-brand { padding-left: 60px; padding-top: 14px; padding-bottom: 14px; } /* clear hamburger, less vertical space */
 }
 .sidebar-logo {
   width: 44px;
@@ -800,6 +802,7 @@ tbody td {
   padding: 16px 20px;
   border-bottom: 1px solid var(--border);
   background: var(--bg-card);
+  flex-shrink: 0;
 }
 .sidebar-user-name {
   font-weight: 600;
@@ -813,7 +816,10 @@ tbody td {
 }
 .sidebar-nav {
   flex: 1;
+  min-height: 0;        /* critical: allows flex child to scroll */
   padding: 16px 12px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 .nav-section-title {
   font-size: var(--fs-xs);
@@ -863,6 +869,7 @@ tbody td {
 .sidebar-footer {
   padding: 16px;
   border-top: 1px solid var(--border);
+  flex-shrink: 0; /* never shrink — always fully visible */
 }
 
 /* Main content area */
@@ -1339,8 +1346,13 @@ tbody td {
   /* ── Layout ── */
   .contact-grid-2col { grid-template-columns: 1fr !important; }
   .sidebar {
-    transform: translateX(-280px);  /* must equal width so nothing bleeds */
+    transform: translateX(-280px);
     width: 280px;
+    height: 100vh;
+    height: 100dvh;
+    max-height: 100vh;
+    max-height: 100dvh;
+    overflow: hidden;
   }
   .sidebar.mobile-open {
     transform: translateX(0);
@@ -1589,6 +1601,14 @@ tbody td {
     max-height: 88vh !important;
     overflow-y: auto !important;
     -webkit-overflow-scrolling: touch;
+    padding: 16px !important;
+  }
+  .modal-footer {
+    position: sticky;
+    bottom: 0;
+    background: var(--bg-card);
+    padding-top: 12px !important;
+    padding-bottom: 4px !important;
   }
 
   /* Card padding reduction for small screens */
@@ -3921,10 +3941,10 @@ async function handleAddSession() {
     const isFirst = activeSnap.empty;
     await db.collection('sessions').doc(name).set({
       isActive: isFirst,
-      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-      startDate: '',
-      endDate: ''
-    }, { merge: true }); // merge:true → never overwrites existing startDate/endDate
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      // startDate / endDate are NOT set here — admin sets them via date picker
+      // Never pass startDate:'' here — it would overwrite a saved date with blank
+    });
     document.getElementById('new-session-name').value = '';
     msg.innerHTML = `<div class="info-box" style="color:var(--success);">✅ Session "${name}" added!${isFirst ? ' (Auto-activated as first session)' : ' Toggle it ON when ready.'}</div>`;
     loadAdminSessions();
@@ -4234,13 +4254,11 @@ function buildStudentDashboardHTML() {
             Your study materials for <strong style="color:var(--text-white);">${className}</strong> are ready.
             Keep learning, keep growing!
           </p>
-          <div style="margin-top:16px;">
+          <div style="margin-top:16px; display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
             <span class="badge badge-blue">🎓 ${className}</span>
-            &nbsp;
             <span class="badge ${(student.board||'BSEB')==='CBSE' ? 'badge-green' : 'badge-blue'}">
               ${(student.board||'BSEB')==='CBSE' ? '📗 CBSE' : '📘 BSEB'}
             </span>
-            &nbsp;
             <span class="badge badge-green">✅ Active Student</span>
           </div>
         </div>
@@ -4616,7 +4634,7 @@ function buildStudentDashboardHTML() {
           </div>
 
           <!-- Stats 2x2 grid -->
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
             <div style="background:var(--bg-card2);border:1px solid var(--border);border-radius:var(--radius);padding:18px;text-align:center;">
               <div id="s-att-present" style="font-family:'Rajdhani',sans-serif;font-size:30px;font-weight:700;color:#00ff88;">—</div>
               <div style="font-size:var(--fs-sm);color:var(--text-muted);margin-top:4px;">✅ Present</div>
@@ -4632,6 +4650,44 @@ function buildStudentDashboardHTML() {
             <div style="background:var(--bg-card2);border:2px solid var(--neon-blue);border-radius:var(--radius);padding:18px;text-align:center;">
               <div id="s-att-pct" style="font-family:'Rajdhani',sans-serif;font-size:30px;font-weight:700;color:var(--neon-blue);">—</div>
               <div style="font-size:var(--fs-sm);color:var(--text-muted);margin-top:4px;">📊 Attendance %</div>
+            </div>
+          </div>
+
+          <!-- Attendance Progress Bar -->
+          <div id="s-att-bar-wrap" style="background:var(--bg-card2);border:1px solid var(--border);
+               border-radius:var(--radius);padding:12px 14px;margin-bottom:16px;">
+            <!-- Bar track -->
+            <div style="position:relative;height:12px;background:rgba(255,68,102,0.15);
+                        border-radius:99px;overflow:hidden;margin-bottom:10px;">
+              <div id="s-att-bar-fill"
+                style="position:absolute;left:0;top:0;height:100%;width:0%;
+                       border-radius:99px;
+                       background:linear-gradient(90deg,#00c853,#00ff88);
+                       transition:width 0.6s cubic-bezier(.4,0,.2,1);
+                       will-change:width;
+                       -webkit-transform:translateZ(0);transform:translateZ(0);"></div>
+            </div>
+            <!-- Summary row: stacks on very small screens -->
+            <div style="display:flex;align-items:center;justify-content:space-between;
+                        gap:4px;font-family:'Rajdhani',sans-serif;flex-wrap:wrap;">
+              <!-- Left: Total / P / A -->
+              <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;min-width:0;">
+                <span style="font-size:13px;color:var(--text-muted);white-space:nowrap;">
+                  Total: <strong id="s-att-bar-total" style="color:var(--text-white);font-size:14px;">—</strong>
+                </span>
+                <span style="font-size:13px;color:#00ff88;white-space:nowrap;
+                             background:rgba(0,255,136,0.08);border-radius:4px;padding:2px 7px;">
+                  P <strong id="s-att-bar-p">—</strong>
+                </span>
+                <span style="font-size:13px;color:#ff4466;white-space:nowrap;
+                             background:rgba(255,68,102,0.08);border-radius:4px;padding:2px 7px;">
+                  A <strong id="s-att-bar-a">—</strong>
+                </span>
+              </div>
+              <!-- Right: % -->
+              <div id="s-att-bar-pct"
+                style="font-size:16px;font-weight:700;color:var(--neon-blue);
+                       white-space:nowrap;flex-shrink:0;">—</div>
             </div>
           </div>
 
@@ -5096,7 +5152,16 @@ async function loadStudentHomeNotices() {
       .get();
 
     // Only show notices targeted at student dashboard
-    const docs = snap.docs.filter(d => d.data().showOnDashboard !== false && d.data().isPublic !== false);
+    // If notice has targetClasses, only show if student's board|class matches
+    const student = AppState.currentUser;
+    const studentKey = student ? ((student.board||'BSEB').toUpperCase() + '|' + student.class) : null;
+    const docs = snap.docs.filter(d => {
+      const nd = d.data();
+      if (nd.showOnDashboard === false || nd.isPublic === false) return false;
+      const tc = nd.targetClasses;
+      if (!tc || tc.length === 0) return true; // no class filter → show to all
+      return studentKey && tc.includes(studentKey);
+    });
 
     if (docs.length === 0) {
       container.innerHTML = `
@@ -5129,8 +5194,16 @@ async function loadStudentNotices() {
       .orderBy('createdAt', 'desc')
       .get();
 
-    // Only show notices targeted at student dashboard
-    const docs = snap.docs.filter(d => d.data().showOnDashboard !== false && d.data().isPublic !== false);
+    // Only show notices targeted at student dashboard, filtered by class if applicable
+    const student2 = AppState.currentUser;
+    const studentKey2 = student2 ? ((student2.board||'BSEB').toUpperCase() + '|' + student2.class) : null;
+    const docs = snap.docs.filter(d => {
+      const nd = d.data();
+      if (nd.showOnDashboard === false || nd.isPublic === false) return false;
+      const tc = nd.targetClasses;
+      if (!tc || tc.length === 0) return true;
+      return studentKey2 && tc.includes(studentKey2);
+    });
 
     if (docs.length === 0) {
       container.innerHTML = `
@@ -5373,27 +5446,56 @@ async function loadStudentFolders(parentFolderId = null) {
     }
 
     // Run both queries in parallel — faster than sequential
-    const [foldersSnap, filesSnap] = await Promise.all([
-      foldersQuery.orderBy('name').get(),
-      db.collection('materials')
-        .where('classId', '==', classId)
-        .where('isLocked', '==', false)
-        .where('folderId', '==', parentFolderId || 'root')
-        .orderBy('createdAt', 'desc').get()
-    ]);
+    // NOTE: orderBy('sortOrder') requires a Firestore composite index:
+    // folders: classId (ASC) + isLocked (ASC) + parentFolderId (ASC) + sortOrder (ASC)
+    let foldersSnap, filesSnap;
+    try {
+      [foldersSnap, filesSnap] = await Promise.all([
+        foldersQuery.orderBy('sortOrder').get(),
+        db.collection('materials')
+          .where('classId', '==', classId)
+          .where('isLocked', '==', false)
+          .where('folderId', '==', parentFolderId || 'root')
+          .orderBy('createdAt', 'desc').get()
+      ]);
+    } catch(indexErr) {
+      // Fallback: index not yet created — load without sortOrder, JS sort will handle it
+      console.warn('sortOrder index missing, falling back to name order. Create index in Firebase console.');
+      [foldersSnap, filesSnap] = await Promise.all([
+        foldersQuery.get(),
+        db.collection('materials')
+          .where('classId', '==', classId)
+          .where('isLocked', '==', false)
+          .where('folderId', '==', parentFolderId || 'root')
+          .orderBy('createdAt', 'desc').get()
+      ]);
+    }
 
     // Build content HTML
     let html = '';
 
+    // Sort folders: by sortOrder (admin drag order), fallback to name for old folders
+    const folderDocs = foldersSnap.docs.slice().sort((a, b) => {
+      const so_a = a.data().sortOrder;
+      const so_b = b.data().sortOrder;
+      // If both have sortOrder → use it
+      if (so_a !== undefined && so_b !== undefined) return so_a - so_b;
+      // If only one has it → that one comes first
+      if (so_a !== undefined) return -1;
+      if (so_b !== undefined) return 1;
+      // Neither has sortOrder → alphabetical fallback
+      return (a.data().name || '').localeCompare(b.data().name || '');
+    });
+
     // Folders section
-    if (!foldersSnap.empty) {
+    if (folderDocs.length) {
       html += `<div style="margin-bottom:24px;">
         <div style="font-size:var(--fs-sm); color:var(--text-dim);
                     text-transform:uppercase; letter-spacing:1px;
                     margin-bottom:12px; font-weight:600;">📁 Folders</div>
         <div class="folder-grid">`;
 
-      foldersSnap.forEach(doc => {
+      folderDocs.forEach(doc => {
         const f = doc.data();
         html += `
           <div class="folder-item"
@@ -5423,7 +5525,7 @@ async function loadStudentFolders(parentFolderId = null) {
     }
 
     // Empty state
-    if (foldersSnap.empty && filesSnap.empty) {
+    if (!folderDocs.length && filesSnap.empty) {
       html = `
         <div class="empty-state">
           <div class="empty-state-icon">📭</div>
@@ -6347,6 +6449,12 @@ function buildAdminDashboardHTML() {
              onclick="showAdminPage('a-page-attendance'); initAdminAttendance();">
           <span class="nav-icon">📊</span> Attendance
         </div>
+
+        <div class="nav-item" data-page="a-page-leaderboard"
+             onclick="showAdminPage('a-page-leaderboard'); initAdminLeaderboard();">
+          <span class="nav-icon">🏆</span> Leaderboard
+        </div>
+
         <div class="nav-item" data-page="a-page-settings"
              onclick="showAdminPage('a-page-settings'); loadInstituteInfo(); loadSessionTimeoutUI(); loadProfileEditPermission(); loadAttendanceFeatureState();">
           <span class="nav-icon">⚙️</span> Settings
@@ -6813,7 +6921,7 @@ function buildAdminDashboardHTML() {
               Post announcements for all students
             </p>
           </div>
-          <button class="btn btn-primary" onclick="openModal('modal-add-notice')">
+          <button class="btn btn-primary" onclick="openModal('modal-add-notice'); loadNoticeClassGrid()">
             ➕ Post Notice
           </button>
         </div>
@@ -7019,7 +7127,7 @@ function buildAdminDashboardHTML() {
           </div>
 
           <!-- Feature Controls card -->
-          <div class="card" style="grid-column: 1 / -1;">
+          <div class="card" style="grid-column: 1 / -1; margin-top:20px;">
             <div class="card-title">🎛️ Feature <span>Controls</span></div>
             <div style="color:var(--text-muted); font-size:var(--fs-sm); margin-bottom:18px;">
               Enable or disable features for students. Disabled features become
@@ -7028,23 +7136,24 @@ function buildAdminDashboardHTML() {
 
             <!-- Attendance toggle row -->
             <div style="display:flex; align-items:center; justify-content:space-between;
-                        padding:16px; background:var(--bg-card2); border-radius:var(--radius);
+                        gap:12px; flex-wrap:wrap;
+                        padding:14px 16px; background:var(--bg-card2); border-radius:var(--radius);
                         border:1px solid var(--border); margin-bottom:10px;">
-              <div>
+              <div style="flex:1; min-width:0;">
                 <div style="font-weight:600; color:var(--text-white); margin-bottom:3px;">
                   📊 Attendance Tab
                 </div>
-                <div style="font-size:var(--fs-xs); color:var(--text-muted);">
+                <div style="font-size:var(--fs-xs); color:var(--text-muted); line-height:1.4;">
                   When disabled, students cannot open the Attendance section.
                 </div>
               </div>
-              <div style="display:flex; align-items:center; gap:12px;">
+              <div style="display:flex; align-items:center; gap:10px; flex-shrink:0;">
                 <span id="att-feature-label" style="font-size:var(--fs-sm);
-                      color:var(--text-muted);">Loading...</span>
+                      color:var(--text-muted); white-space:nowrap;">Loading...</span>
                 <button id="att-feature-btn" onclick="toggleAttendanceFeature()"
-                  style="padding:8px 20px; border-radius:var(--radius-sm);
+                  style="padding:8px 18px; border-radius:var(--radius-sm);
                          border:none; font-size:var(--fs-sm); font-weight:600;
-                         cursor:pointer; transition:all .2s; min-width:100px;">
+                         cursor:pointer; transition:all .2s; min-width:80px; white-space:nowrap;">
                   ...
                 </button>
               </div>
@@ -7473,7 +7582,19 @@ function buildAdminDashboardHTML() {
           <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px;">
             <div>
               <div style="font-family:'Rajdhani',sans-serif;font-size:var(--fs-lg);font-weight:700;color:var(--neon-blue);" id="att-view-class-title"></div>
-              <div style="font-size:var(--fs-xs);color:var(--text-muted);">Session: <span id="att-view-session-label"></span></div>
+              <div style="display:flex;align-items:center;gap:8px;margin-top:4px;flex-wrap:wrap;">
+                <span style="font-size:var(--fs-xs);color:var(--text-muted);">Session:</span>
+                <select id="att-session-select"
+                  onchange="attChangeSession(this.value)"
+                  style="background:var(--bg-card2);border:1px solid var(--border);
+                         color:var(--text-white);padding:4px 10px;border-radius:var(--radius-sm);
+                         font-size:var(--fs-xs);outline:none;cursor:pointer;">
+                </select>
+                <span id="att-session-readonly-badge" style="display:none;
+                  background:rgba(255,170,0,0.12);border:1px solid #ffaa00;
+                  color:#ffaa00;font-size:10px;font-weight:600;
+                  padding:2px 8px;border-radius:4px;">👁️ VIEW ONLY</span>
+              </div>
             </div>
             <button class="btn btn-ghost btn-sm" onclick="attExportPDF()">⬇️ Export PDF</button>
           </div>
@@ -7559,7 +7680,7 @@ function buildAdminDashboardHTML() {
 
         <!-- Cycle hint instead of popup -->
         <div style="font-size:var(--fs-xs);color:var(--text-dim);margin-top:6px;">
-          💡 Tap a cell to cycle: <span style="color:#ffaa00;">? NM</span> → <span style="color:#00ff88;">✅ P</span> → <span style="color:#ff4466;">❌ A</span> → <span style="color:#7a9bba;">🏖 H</span> → repeat
+          💡 Tap a cell to toggle: <span style="color:#ffaa00;">? NM</span> → <span style="color:#00ff88;">✅ P</span> → <span style="color:#ff4466;">❌ A</span> → repeat &nbsp;|&nbsp; <span style="color:#7a9bba;">🏖 H</span> = set from Calendar
           &nbsp;|&nbsp; <span style="opacity:0.4;">—</span> <span style="opacity:0.6;">= Before student's joining date (not applicable)</span>
         </div>
 
@@ -7653,6 +7774,106 @@ function buildAdminDashboardHTML() {
 
       </div><!-- end a-page-attendance -->
 
+      <!-- ADMIN LEADERBOARD PAGE -->
+      <div id="a-page-leaderboard" class="page" style="padding-bottom:24px;">
+
+        <div class="page-header">
+          <h1>🏆 <span>Leaderboard</span></h1>
+          <p style="color:var(--text-muted);font-size:var(--fs-sm);margin-top:4px;">Rankings across attendance, exams, and more.</p>
+        </div>
+
+        <!-- Category tabs -->
+        <div style="display:flex;gap:0;margin-bottom:24px;border-bottom:2px solid var(--border);">
+          <div id="alb-cat-attendance" onclick="aLbSwitchCategory('attendance')"
+            style="padding:12px 20px;font-family:'Rajdhani',sans-serif;font-weight:700;font-size:var(--fs-base);
+                   cursor:pointer;color:var(--neon-blue);border-bottom:3px solid var(--neon-blue);
+                   margin-bottom:-2px;transition:all 0.15s;">
+            📊 Attendance Rankings
+          </div>
+          <div id="alb-cat-exam" onclick="aLbSwitchCategory('exam')"
+            style="padding:12px 20px;font-family:'Rajdhani',sans-serif;font-weight:700;font-size:var(--fs-base);
+                   cursor:pointer;color:var(--text-dim);border-bottom:3px solid transparent;
+                   margin-bottom:-2px;transition:all 0.15s;position:relative;">
+            📝 Exam Rankings
+            <span style="font-size:9px;font-weight:700;background:rgba(255,170,0,0.15);border:1px solid #ffaa00;
+                         color:#ffaa00;padding:1px 5px;border-radius:4px;margin-left:6px;vertical-align:middle;">SOON</span>
+          </div>
+        </div>
+
+        <!-- Attendance Rankings Panel -->
+        <div id="alb-panel-attendance">
+          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px;">
+            <select id="alb-session-select" onchange="aLbLoad()"
+              style="background:var(--bg-card2);border:1px solid var(--border);color:var(--text-white);
+                     padding:8px 12px;border-radius:var(--radius-sm);font-size:var(--fs-sm);outline:none;cursor:pointer;">
+            </select>
+            <div style="display:flex;gap:6px;">
+              <button id="alb-tab-month" onclick="aLbSwitchTab('month')"
+                style="padding:8px 16px;border-radius:var(--radius-sm);font-family:'Rajdhani',sans-serif;
+                       font-weight:600;font-size:var(--fs-sm);cursor:pointer;
+                       border:1px solid var(--neon-blue);background:rgba(0,212,255,0.1);color:var(--neon-blue);">
+                📅 This Month
+              </button>
+              <button id="alb-tab-overall" onclick="aLbSwitchTab('overall')"
+                style="padding:8px 16px;border-radius:var(--radius-sm);font-family:'Rajdhani',sans-serif;
+                       font-weight:600;font-size:var(--fs-sm);cursor:pointer;
+                       border:1px solid var(--border);background:var(--bg-card2);color:var(--text-muted);">
+                🗓️ Overall
+              </button>
+            </div>
+            <div id="alb-month-nav" style="display:flex;align-items:center;gap:8px;">
+              <button onclick="aLbChangeMonth(-1)"
+                style="width:32px;height:32px;border-radius:50%;background:var(--bg-card2);
+                       border:1px solid var(--border);color:var(--text-white);cursor:pointer;font-size:16px;">&#8249;</button>
+              <div id="alb-month-label"
+                style="font-family:'Rajdhani',sans-serif;font-weight:700;font-size:var(--fs-sm);
+                       min-width:120px;text-align:center;color:var(--text-white);"></div>
+              <button onclick="aLbChangeMonth(1)"
+                style="width:32px;height:32px;border-radius:50%;background:var(--bg-card2);
+                       border:1px solid var(--border);color:var(--text-white);cursor:pointer;font-size:16px;">&#8250;</button>
+            </div>
+            <select id="alb-class-filter" onchange="aLbRender()"
+              style="background:var(--bg-card2);border:1px solid var(--border);color:var(--text-white);
+                     padding:8px 12px;border-radius:var(--radius-sm);font-size:var(--fs-sm);outline:none;cursor:pointer;">
+              <option value="">All Classes</option>
+            </select>
+          </div>
+          <div id="alb-loading" style="text-align:center;padding:40px;color:var(--text-muted);">
+            <div class="spinner" style="margin:0 auto 12px;"></div>
+            Loading leaderboard...
+          </div>
+          <div id="alb-empty" class="hidden" style="text-align:center;padding:40px;">
+            <div style="font-size:40px;margin-bottom:12px;">🏆</div>
+            <div style="font-family:'Rajdhani',sans-serif;font-size:var(--fs-md);font-weight:700;
+                        color:var(--text-white);margin-bottom:8px;">No leaderboard data yet</div>
+            <div style="font-size:var(--fs-sm);color:var(--text-muted);line-height:1.6;" id="alb-empty-msg">
+              Monthly leaderboards publish automatically on the 1st of each month.
+            </div>
+          </div>
+          <div id="alb-content" class="hidden"></div>
+        </div>
+
+        <!-- Exam Rankings Panel -->
+        <div id="alb-panel-exam" class="hidden" style="text-align:center;padding:60px 24px;">
+          <div style="font-size:56px;margin-bottom:16px;">📝</div>
+          <div style="font-family:'Rajdhani',sans-serif;font-size:var(--fs-lg);font-weight:700;
+                      color:var(--text-white);margin-bottom:10px;">Exam Rankings</div>
+          <div style="font-size:var(--fs-sm);color:var(--text-muted);max-width:340px;
+                      margin:0 auto 20px;line-height:1.7;">
+            Term-wise marks leaderboard will appear here once the Exam Records feature is added.
+          </div>
+          <div style="display:inline-block;background:rgba(255,170,0,0.1);border:1px solid #ffaa00;
+                      color:#ffaa00;font-weight:600;font-size:var(--fs-sm);
+                      padding:10px 24px;border-radius:var(--radius-sm);">
+            🚧 Coming Soon
+          </div>
+        </div>
+
+      </div><!-- end a-page-leaderboard -->
+
+    </main><!-- end admin main-content -->
+  </div><!-- end admin app-layout -->
+  </div><!-- end admin dashboard-area -->
 
 
   <!-- =====================================================
@@ -7781,6 +8002,23 @@ function buildAdminDashboardHTML() {
           ℹ️ At least one must be selected.
         </div>
       </div>
+
+      <!-- Target Classes section -->
+      <div class="form-group">
+        <label>Target Classes
+          <span style="font-size:11px;font-weight:400;color:var(--text-dim);margin-left:6px;">
+            (leave unselected = visible to all classes)
+          </span>
+        </label>
+        <div id="notice-class-loading" style="font-size:var(--fs-sm);color:var(--text-dim);margin-top:6px;">
+          Loading classes...
+        </div>
+        <div id="notice-class-grid" style="display:none;margin-top:8px;"></div>
+        <div style="font-size:11px;color:var(--text-dim);margin-top:6px;">
+          💡 Select specific classes to restrict this notice. Class-targeted notices are hidden from the public Home Page.
+        </div>
+      </div>
+
       <div class="modal-footer">
         <button class="btn btn-ghost" onclick="closeModal('modal-add-notice')">
           Cancel
@@ -7890,6 +8128,7 @@ function buildAdminDashboardHTML() {
 // Switches between admin dashboard pages
 // =============================================================
 function showAdminPage(pageId, addHistory = true) {
+  // Remove active from ALL admin pages (some may be outside #dashboard-area)
   document.querySelectorAll('#dashboard-area .page').forEach(p => {
     p.classList.remove('active');
   });
@@ -9927,6 +10166,23 @@ async function loadAdminNotices() {
       else
         visBadge = '<span class="badge badge-gray" style="font-size:10px;">👁️ Hidden</span>';
 
+      // Target classes badge
+      const tc = n.targetClasses;
+      let classBadge = '';
+      if (tc && tc.length > 0) {
+        const labels = tc.map(key => {
+          const [board, clsId] = key.split('|');
+          const name = getClassName(clsId) || clsId;
+          const color = board === 'CBSE' ? '#00c896' : 'var(--neon-blue)';
+          return `<span style="background:rgba(0,212,255,0.1);border:1px solid ${color};
+                               color:${color};border-radius:4px;padding:1px 6px;
+                               font-size:10px;font-weight:600;">${board} ${name}</span>`;
+        }).join(' ');
+        classBadge = `<div style="margin-top:5px;display:flex;gap:4px;flex-wrap:wrap;">
+          <span style="font-size:10px;color:var(--text-dim);">🎯 Target:</span> ${labels}
+        </div>`;
+      }
+
       return `
         <div class="notice-item ${n.importance || 'normal'}"
              style="margin-bottom:14px; opacity:${isPublic ? '1' : '0.65'}; position:relative;">
@@ -9940,6 +10196,7 @@ async function loadAdminNotices() {
                   : '<span class=\"badge badge-gray\" style=\"font-size:10px;\">🔒 Private</span>'}
                 ${visBadge}
               </div>
+              ${classBadge}
             </div>
 
             <!-- 3-dot menu -->
@@ -10090,14 +10347,25 @@ async function handleAddNotice() {
   const title      = document.getElementById('notice-title').value.trim();
   const message    = document.getElementById('notice-message').value.trim();
   const importance = document.getElementById('notice-importance').value;
-  const showOnHome      = document.getElementById('notice-vis-home').checked;
+  let showOnHome      = document.getElementById('notice-vis-home').checked;
   const showOnDashboard = document.getElementById('notice-vis-dashboard').checked;
 
+  // Collect selected target classes (array of "BOARD|classId" strings)
+  const checkedBoxes = document.querySelectorAll('#notice-class-grid input[type=checkbox]:checked');
+  const targetClasses = Array.from(checkedBoxes).map(cb => cb.value);
+
+  // If class-targeted → auto-hide from public Home Page (class notice = student-only)
+  if (targetClasses.length > 0) showOnHome = false;
+
   if (!title || !message) {
-    showToast('Please fill in title and message.', 'error'); return;
+    showToast('Please fill in title and message.', 'error');
+    if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = '📢 Post Notice'; }
+    return;
   }
   if (!showOnHome && !showOnDashboard) {
-    showToast('Please select at least one visibility option.', 'error'); return;
+    showToast('Please select at least one visibility option.', 'error');
+    if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = '📢 Post Notice'; }
+    return;
   }
 
   try {
@@ -10106,6 +10374,7 @@ async function handleAddNotice() {
       isPublic: true,
       showOnHome,
       showOnDashboard,
+      targetClasses,   // [] = all classes, ["BSEB|class-10"] = specific class only
       createdAt: firebase.firestore.FieldValue.serverTimestamp()
     });
     showToast('Notice posted successfully! 📢', 'success');
@@ -10118,17 +10387,104 @@ async function handleAddNotice() {
     document.getElementById('notice-vis-dashboard').checked = true;
     document.getElementById('notice-vis-home-label').style.borderColor = 'var(--neon-blue)';
     document.getElementById('notice-vis-dash-label').style.borderColor = 'var(--neon-blue)';
+    // Uncheck all class checkboxes
+    document.querySelectorAll('#notice-class-grid input[type=checkbox]').forEach(cb => {
+      cb.checked = false;
+      const lbl = cb.closest('label');
+      if (lbl) lbl.style.borderColor = 'var(--border)';
+    });
     loadAdminNotices();
-    loadHomeNotices(); // Refresh homepage notices too
+    loadHomeNotices();
   } catch (err) {
     showToast('Failed to post notice. Try again.', 'error');
+    if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = '📢 Post Notice'; }
   }
 }
 
 
 // =============================================================
-// OPEN EDIT NOTICE MODAL
+// LOAD CLASS GRID INTO POST NOTICE MODAL
+// Groups classes by board (BSEB / CBSE), each as a toggleable card
+// Value stored: "BOARD|classId"  e.g. "BSEB|class-10"
 // =============================================================
+async function loadNoticeClassGrid() {
+  const loading = document.getElementById('notice-class-loading');
+  const grid    = document.getElementById('notice-class-grid');
+  if (!grid) return;
+  if (loading) loading.style.display = 'block';
+  grid.style.display = 'none';
+  try {
+    const snap = await db.collection('classes').orderBy('order').get();
+    if (snap.empty) {
+      if (loading) loading.textContent = 'No classes found.';
+      return;
+    }
+
+    // Group by board
+    const bseb = [], cbse = [], other = [];
+    snap.forEach(doc => {
+      const c = { id: doc.id, ...doc.data() };
+      const b = (c.board || 'BSEB').toUpperCase();
+      if      (b === 'BSEB') bseb.push(c);
+      else if (b === 'CBSE') cbse.push(c);
+      else                   other.push(c);
+    });
+
+    let html = '';
+
+    function buildBoardSection(label, emoji, color, classes) {
+      if (!classes.length) return '';
+      return `
+        <div style="margin-bottom:12px;">
+          <div style="font-size:11px;font-weight:700;color:${color};letter-spacing:0.5px;
+                      margin-bottom:6px;">${emoji} ${label}</div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;">
+            ${classes.map(c => {
+              const val = (c.board||'BSEB').toUpperCase() + '|' + c.id;
+              const safeVal = val.replace(/'/g, "\\'");
+              return `<label id="ncls-lbl-${c.id}-${(c.board||'BSEB')}"
+                style="display:flex;align-items:center;gap:6px;cursor:pointer;
+                       background:var(--bg-card2);border:1px solid var(--border);
+                       border-radius:var(--radius-sm);padding:7px 12px;
+                       transition:border-color 0.15s;font-size:var(--fs-sm);">
+                <input type="checkbox" value="${safeVal}"
+                  style="width:14px;height:14px;accent-color:${color};cursor:pointer;"
+                  onchange="
+                    document.getElementById('ncls-lbl-${c.id}-${(c.board||'BSEB')}').style.borderColor
+                      = this.checked ? '${color}' : 'var(--border)';
+                    noticeClassSelectionHint();
+                  ">
+                <span style="color:var(--text-white);font-weight:500;">${c.name}</span>
+              </label>`;
+            }).join('')}
+          </div>
+        </div>`;
+    }
+
+    html += buildBoardSection('BSEB', '📘', 'var(--neon-blue)', bseb);
+    html += buildBoardSection('CBSE', '📗', '#00c896', cbse);
+    html += buildBoardSection('OTHER', '📙', '#ffaa00', other);
+
+    grid.innerHTML = html;
+    if (loading) loading.style.display = 'none';
+    grid.style.display = 'block';
+  } catch(e) {
+    if (loading) loading.textContent = 'Could not load classes.';
+  }
+}
+
+// Show hint when class selection changes
+function noticeClassSelectionHint() {
+  const checked = document.querySelectorAll('#notice-class-grid input[type=checkbox]:checked');
+  const homeCheck = document.getElementById('notice-vis-home');
+  if (checked.length > 0) {
+    // Auto-uncheck Home Page when targeting a class
+    if (homeCheck) {
+      homeCheck.checked = false;
+      document.getElementById('notice-vis-home-label').style.borderColor = 'var(--border)';
+    }
+  }
+}
 function openEditNoticeModal(id, title, message, importance, showOnHome, showOnDashboard, isPublic) {
   document.getElementById('edit-notice-id').value         = id;
   document.getElementById('edit-notice-isPublic').value   = (isPublic !== false) ? 'true' : 'false';
@@ -11025,7 +11381,9 @@ function loadAdminMaterialsPage() {
 
 console.log('✅ PART 4: Admin Dashboard loaded');
 
-// Auto-create default session 2026-27 if no sessions exist
+// Auto-create default session 2026-27 only if NO sessions exist at all.
+// startDate / endDate are intentionally excluded — admin sets them manually.
+// Including them (even as '') would overwrite saved values on re-create.
 (async function initDefaultSession() {
   try {
     const snap = await db.collection('sessions').limit(1).get();
@@ -11033,7 +11391,8 @@ console.log('✅ PART 4: Admin Dashboard loaded');
       await db.collection('sessions').doc('2026-27').set({
         isActive: true,
         createdAt: firebase.firestore.FieldValue.serverTimestamp()
-      }, { merge: true }); // merge:true → never wipes startDate/endDate if doc exists
+        // Do NOT include startDate / endDate here
+      });
       console.log('✅ Default session 2026-27 created');
       loadActiveSessionIntoDropdowns();
     }
@@ -11507,6 +11866,34 @@ function buildAdminMaterialsPage() {
       </div>
     </div>
 
+    <!-- Modal: Move Folder -->
+    <div class="modal-overlay" id="modal-move-folder">
+      <div class="modal">
+        <div class="modal-header">
+          <div class="modal-title">📦 Move Folder</div>
+          <button class="modal-close" onclick="closeModal('modal-move-folder')">✕</button>
+        </div>
+        <div style="margin-bottom:14px; font-size:var(--fs-sm); color:var(--text-muted);">
+          Moving: <strong id="move-folder-name" style="color:var(--text-primary);"></strong>
+        </div>
+        <div class="form-group">
+          <label>Select Destination</label>
+          <select class="form-control" id="move-folder-dest-select">
+            <option value="root">📁 Root (top level)</option>
+          </select>
+          <div style="font-size:var(--fs-xs); color:var(--text-dim); margin-top:6px;">
+            ⚠️ Cannot move a folder into itself or its own subfolders.
+            Lock status and timer are kept unchanged.
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-ghost" onclick="closeModal('modal-move-folder')">Cancel</button>
+          <button class="btn btn-primary" onclick="confirmMoveFolder()">📦 Move Folder</button>
+        </div>
+        <input type="hidden" id="move-folder-id" value="">
+      </div>
+    </div>
+
     <!-- Modal: Set Timer -->
     <div class="modal-overlay" id="modal-set-timer">
       <div class="modal">
@@ -11755,6 +12142,7 @@ async function loadAdminFolderContents(parentFolderId) {
                 <div class="fdm-item" onclick="event.stopPropagation();closeFolderMenus();toggleFolderLock('${f.id}',${isLocked})">${isLocked ? '🔓 Unlock' : '🔒 Lock'}</div>
                 <div class="fdm-item" onclick="event.stopPropagation();closeFolderMenus();openSetTimerModal('${f.id}','folder','${countdown||''}')">⏰ Set Timer${countdown ? ' ✓':''}</div>
                 <div class="fdm-item" onclick="event.stopPropagation();closeFolderMenus();openRenameFolderModal('${f.id}','${f.name.replace(/'/g,"\\'")}')">✏️ Rename</div>
+                <div class="fdm-item" onclick="event.stopPropagation();closeFolderMenus();openMoveFolderModal('${f.id}','${f.name.replace(/'/g,"\\'")}')">📦 Move</div>
                 <div class="fdm-item fdm-danger" onclick="event.stopPropagation();closeFolderMenus();confirmDeleteFolder('${f.id}','${f.name.replace(/'/g,"\\'")}')">🗑️ Delete</div>
               </div>
             </div>
@@ -12316,12 +12704,21 @@ async function openMoveFileModal(fileId, fileName) {
   if (classId) {
     try {
       const snap = await db.collection('folders').where('classId','==',classId).get();
-      snap.forEach(doc => {
-        const opt = document.createElement('option');
-        opt.value = doc.id;
-        opt.textContent = `📁 ${doc.data().name}`;
-        select.appendChild(opt);
-      });
+      const allFolders = {};
+      snap.forEach(doc => { allFolders[doc.id] = { id:doc.id, ...doc.data() }; });
+      function buildFileOptions(parentId, depth) {
+        Object.values(allFolders)
+          .filter(f => (f.parentFolderId||null) === (parentId||null))
+          .sort((a,b) => (a.name||'').localeCompare(b.name||''))
+          .forEach(f => {
+            const opt = document.createElement('option');
+            opt.value = f.id;
+            opt.textContent = '  '.repeat(depth) + '📁 ' + f.name;
+            select.appendChild(opt);
+            buildFileOptions(f.id, depth + 1);
+          });
+      }
+      buildFileOptions(null, 0);
     } catch(e) {}
   }
   openModal('modal-move-file');
@@ -12337,6 +12734,75 @@ async function confirmMoveFile() {
     closeModal('modal-move-file');
     loadAdminFolderContents(AdminFolderState.currentFolderId);
   } catch(err) { showToast('Failed to move file. Try again.', 'error'); }
+}
+
+
+// =============================================================
+// MOVE FOLDER — changes parentFolderId in Firestore
+// Only shows folders within the same class.
+// Guards against moving into self or own subfolders.
+// =============================================================
+async function openMoveFolderModal(folderId, folderName) {
+  document.getElementById('move-folder-id').value         = folderId;
+  document.getElementById('move-folder-name').textContent = folderName;
+  const select = document.getElementById('move-folder-dest-select');
+  select.innerHTML = '<option value="root">📁 Root (top level)</option>';
+
+  const classId = AdminFolderState.currentClassId;
+  if (!classId) { openModal('modal-move-folder'); return; }
+
+  try {
+    const blockedIds = await getAllSubfolderIds(folderId);
+    blockedIds.add(folderId); // can't move into itself
+
+    const snap = await db.collection('folders').where('classId','==',classId).get();
+    // Build a map for hierarchy rendering
+    const allFolders = {};
+    snap.forEach(doc => { allFolders[doc.id] = { id:doc.id, ...doc.data() }; });
+
+    // Build sorted tree — root folders first, then children
+    function buildOptions(parentId, depth) {
+      Object.values(allFolders)
+        .filter(f => (f.parentFolderId||null) === (parentId||null))
+        .sort((a,b) => (a.name||'').localeCompare(b.name||''))
+        .forEach(f => {
+          if (blockedIds.has(f.id)) return;
+          const opt = document.createElement('option');
+          opt.value = f.id;
+          opt.textContent = '  '.repeat(depth) + '📁 ' + f.name;
+          select.appendChild(opt);
+          buildOptions(f.id, depth + 1);
+        });
+    }
+    buildOptions(null, 0);
+  } catch(e) {}
+  openModal('modal-move-folder');
+}
+
+// Recursively collect all subfolder IDs of a given folder
+async function getAllSubfolderIds(folderId) {
+  const ids = new Set();
+  const queue = [folderId];
+  while (queue.length) {
+    const current = queue.shift();
+    const snap = await db.collection('folders').where('parentFolderId','==',current).get();
+    snap.forEach(doc => { ids.add(doc.id); queue.push(doc.id); });
+  }
+  return ids;
+}
+
+async function confirmMoveFolder() {
+  const folderId  = document.getElementById('move-folder-id').value;
+  const destId    = document.getElementById('move-folder-dest-select').value;
+  if (!folderId) return;
+  // destId 'root' → parentFolderId = null, else use the selected folder id
+  const newParent = destId === 'root' ? null : destId;
+  try {
+    await db.collection('folders').doc(folderId).update({ parentFolderId: newParent });
+    showToast('📦 Folder moved successfully!', 'success');
+    closeModal('modal-move-folder');
+    loadAdminFolderContents(AdminFolderState.currentFolderId);
+  } catch(err) { showToast('Failed to move folder. Try again.', 'error'); }
 }
 
 
@@ -13159,39 +13625,39 @@ console.log('🌐 Then deploy to Netlify for free hosting');
 
 <!-- ── Duplicate Session Warning Modal (shown at login) ── -->
 <div id="modal-duplicate-session" class="modal-overlay">
-  <div class="modal" style="max-width:400px;text-align:center;">
-    <div class="modal-header" style="justify-content:center;border-bottom:1px solid var(--border);padding-bottom:16px;">
-      <div style="display:flex;flex-direction:column;align-items:center;gap:10px;">
+  <div class="modal" style="max-width:400px;text-align:center;padding:20px;">
+    <div class="modal-header" style="justify-content:center;border-bottom:1px solid var(--border);padding-bottom:14px;margin-bottom:0;">
+      <div style="display:flex;flex-direction:column;align-items:center;gap:8px;">
         <div style="
-          width:60px;height:60px;border-radius:50%;
+          width:56px;height:56px;border-radius:50%;
           background:rgba(255,140,0,0.12);
           border:1.5px solid rgba(255,140,0,0.45);
           display:flex;align-items:center;justify-content:center;
-          font-size:26px;
+          font-size:24px;
           box-shadow:0 0 18px rgba(255,140,0,0.2);
         ">📱</div>
-        <h3 class="modal-title" style="margin:0;color:#ff8c00;">Active Session Detected</h3>
+        <h3 class="modal-title" style="margin:0;color:#ff8c00;font-size:var(--fs-lg);">Active Session Detected</h3>
       </div>
     </div>
-    <div class="modal-body" style="padding:18px 24px 10px;">
-      <p style="color:var(--text-white);font-size:var(--fs-sm);line-height:1.7;margin:0 0 12px;">
+    <div class="modal-body" style="padding:14px 16px 10px;">
+      <p style="color:var(--text-white);font-size:var(--fs-sm);line-height:1.6;margin:0 0 10px;">
         This account is currently active on <strong style="color:#ff8c00;">another device.</strong><br>
         Logging in will end that session immediately.
       </p>
-      <div style="border-top:1px solid var(--border);margin:10px 0;"></div>
-      <p style="color:var(--text-muted);font-size:var(--fs-sm);line-height:1.7;margin:0;">
+      <div style="border-top:1px solid var(--border);margin:8px 0;"></div>
+      <p style="color:var(--text-muted);font-size:var(--fs-sm);line-height:1.6;margin:0;">
         यह अकाउंट किसी <strong style="color:#ff8c00;">दूसरे डिवाइस</strong> पर चल रहा है।<br>
         लॉगिन करने पर वह सेशन बंद हो जाएगा।
       </p>
     </div>
-    <div class="modal-footer" style="gap:10px;padding-top:6px;">
-      <button class="btn btn-ghost" style="flex:1;"
-              onclick="window._pendingLogin=null; closeModal('modal-duplicate-session');">
-        Cancel / रद्द करें
-      </button>
-      <button class="btn btn-primary" style="flex:1;"
+    <div class="modal-footer" style="gap:10px;padding-top:10px;display:flex;flex-direction:column;">
+      <button class="btn btn-primary" style="width:100%;"
               onclick="closeModal('modal-duplicate-session'); if(window._pendingLogin){ window._pendingLogin.proceed(); window._pendingLogin=null; }">
         Login Anyway / फिर भी लॉगिन
+      </button>
+      <button class="btn btn-ghost" style="width:100%;"
+              onclick="window._pendingLogin=null; closeModal('modal-duplicate-session');">
+        ✕ Cancel / रद्द करें
       </button>
     </div>
   </div>
@@ -13258,6 +13724,14 @@ async function attLoadDayStatus(sessionId, classId, y, m, resetCache=true){
 }
 
 async function attSaveDayStatus(date, status){
+  if(Att._sessionReadonly){
+    const s=Att._allSessions?.find(s=>s.id===Att.sessionId);
+    const type=attSessionType(s);
+    showToast(type==='future'
+      ? '🔮 Upcoming session — cannot set day status yet.'
+      : '👁️ Past session — view only. Cannot change day status.','warning',3000);
+    return;
+  }
   const safeClassId=(Att.className||Att.classId).toLowerCase().replace(/\s+/g,'-');
   const docId=Att.sessionId+'_'+safeClassId;
   const y=new Date(date).getFullYear();
@@ -13362,9 +13836,9 @@ async function attDsSave(){
   document.getElementById('att-day-status-modal').style.display='none';
   if(!date||!status) return;
   await attSaveDayStatus(date, status);
-  // Re-render both calendar and register
-  attRenderCalendar(Att.month.getFullYear(),Att.month.getMonth());
-  if(Att.view==='register') attRenderRegister(Att.month.getFullYear(),Att.month.getMonth());
+  // Re-render using full attRenderView so Att.cache is refreshed
+  // (holiday auto-marks students as H — needs fresh load to show in register H column)
+  await attRenderView();
 }
 
 function attDateKey(y,m,d){return `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;}
@@ -13397,6 +13871,16 @@ async function attSyncQ(){
 }
 
 async function attMark(sessionId,classId,date,studentId,status){
+  // Block writes on old (inactive) sessions — view only
+  if(Att._sessionReadonly){
+    const s=Att._allSessions?.find(s=>s.id===Att.sessionId);
+    const type=attSessionType(s);
+    const msg=type==='future'
+      ? '🔮 This is an upcoming session — cannot mark attendance yet.'
+      : '👁️ This is a past session — view only. Switch to active session to mark attendance.';
+    showToast(msg,'warning',3000);
+    return;
+  }
   if(!Att.cache[date])Att.cache[date]={};
   Att.cache[date][studentId]=status;
   if(!navigator.onLine){
@@ -13449,9 +13933,21 @@ function attGetDays(y,m){
 // ── ADMIN ──
 async function initAdminAttendance(){
   attLoadQ();attUpdateSyncBadge();Att.month=new Date();
+  // Load ALL sessions ordered newest first
   try{
     const snap=await db.collection('sessions').orderBy('createdAt','desc').get();
-    snap.forEach(doc=>{if(doc.data().isActive){Att.sessionId=doc.id;Att.sessionData={id:doc.id,...doc.data()};}});
+    Att._allSessions=[];
+    snap.forEach(doc=>{
+      const d=doc.data();
+      Att._allSessions.push({id:doc.id,...d});
+      // Default: pick the active session
+      if(d.isActive){Att.sessionId=doc.id;Att.sessionData={id:doc.id,...d};}
+    });
+    // Fallback: if no active session, use the first (most recent)
+    if(!Att.sessionId && Att._allSessions.length){
+      const s=Att._allSessions[0];
+      Att.sessionId=s.id;Att.sessionData=s;
+    }
   }catch{}
   attAdminGoStep(1);
 }
@@ -13497,40 +13993,121 @@ async function attLoadClasses(board){
 async function attSelectClass(classId,className){
   Att.classId=classId;Att.className=className;Att.month=new Date();
   document.getElementById('att-view-class-title').textContent=className;
-  document.getElementById('att-view-session-label').textContent=Att.sessionId||'No active session';
   attAdminGoStep(3);
+
+  // Populate session selector dropdown
+  const sel=document.getElementById('att-session-select');
+  if(sel && Att._allSessions && Att._allSessions.length){
+    sel.innerHTML=Att._allSessions.map(s=>{
+      const label=s.id+(s.isActive?' (Active)':'');
+      return `<option value="${s.id}" ${s.id===Att.sessionId?'selected':''}>${label}</option>`;
+    }).join('');
+  }
+
+  // Show/hide readonly badge
+  attUpdateReadonlyBadge();
+
   Att.students=await attLoadStudents(classId);
   attUpdateMonthLabel();attRenderView();
-  // Check if previous month leaderboard needs to be published
   lbCheckAndPublish();
+}
+
+// Returns 'past', 'future', or 'active' for a session
+function attSessionType(session){
+  if(!session) return 'active';
+  if(session.isActive) return 'active';
+  const today = new Date();
+  // Use startDate if available, otherwise parse session ID e.g. "2027-28" → starts 2027
+  let startYear = null;
+  if(session.startDate){
+    startYear = new Date(session.startDate).getFullYear();
+  } else {
+    // session.id like "2026-27" → first 4 chars = 2026
+    startYear = parseInt((session.id||'').substring(0,4)) || null;
+  }
+  if(startYear && startYear > today.getFullYear()) return 'future';
+  return 'past';
+}
+
+function attUpdateReadonlyBadge(){
+  const badge=document.getElementById('att-session-readonly-badge');
+  if(!badge) return;
+  const selectedSession=Att._allSessions?.find(s=>s.id===Att.sessionId);
+  const isReadonly = selectedSession && !selectedSession.isActive;
+  Att._sessionReadonly = isReadonly;
+  if(!isReadonly){ badge.style.display='none'; return; }
+  // Show correct label based on past vs future
+  const type = attSessionType(selectedSession);
+  if(type==='future'){
+    badge.textContent='🔮 UPCOMING SESSION';
+    badge.style.background='rgba(138,43,226,0.12)';
+    badge.style.borderColor='#a855f7';
+    badge.style.color='#a855f7';
+  } else {
+    badge.textContent='👁️ VIEW ONLY';
+    badge.style.background='rgba(255,170,0,0.12)';
+    badge.style.borderColor='#ffaa00';
+    badge.style.color='#ffaa00';
+  }
+  badge.style.display='inline-block';
+}
+
+async function attChangeSession(sessionId){
+  const s=Att._allSessions?.find(s=>s.id===sessionId);
+  if(!s) return;
+  Att.sessionId=sessionId;
+  Att.sessionData=s;
+  Att.month=new Date();
+  attUpdateReadonlyBadge();
+  // If past session → jump to last month of that session
+  const type=attSessionType(s);
+  if(type==='past' && s.endDate){
+    const ed=new Date(s.endDate);
+    Att.month=new Date(ed.getFullYear(),ed.getMonth(),1);
+  }
+  // If future session → jump to start month
+  if(type==='future' && s.startDate){
+    const sd=new Date(s.startDate);
+    Att.month=new Date(sd.getFullYear(),sd.getMonth(),1);
+  }
+  attUpdateMonthLabel();
+  const toastMsg = s.isActive
+    ? `✅ Switched to active session: ${sessionId}`
+    : type==='future'
+      ? `🔮 Upcoming session: ${sessionId} — no data yet`
+      : `👁️ Viewing past session: ${sessionId} (read-only)`;
+  showToast(toastMsg, s.isActive?'success':'info', 3000);
+  Att.students = await attLoadStudents(Att.classId);
+  attRenderView();
 }
 
 async function attLoadStudents(classId){
   try{
-    // From Firebase: class="class-10", status="approved"
-    // classId passed is the Firestore doc ID e.g. "class-bseb-class-10-123"
-    // Att.className is display name e.g. "Class 10"
-    // student.class stores lowercase-hyphen e.g. "class-10"
-    // So we derive the expected student class value from className
+    // Convert "Class 10" → "class-10" (how students store their class)
     const cn = Att.className || '';
-    // Convert "Class 10" → "class-10"
     const studentClassVal = cn.toLowerCase().replace(/\s+/g, '-');
+    const sessionId = Att.sessionId; // e.g. "2026-27" or "2027-28"
 
-    // Try direct query first
+    // PRIMARY query: class + session + status (session-isolated)
+    // This ensures 2026-27 students don't show in 2027-28 and vice versa
     let snap = await db.collection('students')
       .where('class','==', studentClassVal)
+      .where('session','==', sessionId)
       .where('status','==','approved').get();
 
-    // If no results, try with original className
-    if(snap.empty){
+    // Fallback 1: try className as-is (edge case for old data)
+    if(snap.empty && cn !== studentClassVal){
       snap = await db.collection('students')
         .where('class','==', cn)
+        .where('session','==', sessionId)
         .where('status','==','approved').get();
     }
-    // If still no results, try status=active
+
+    // Fallback 2: status=active (some older students may have this)
     if(snap.empty){
       snap = await db.collection('students')
         .where('class','==', studentClassVal)
+        .where('session','==', sessionId)
         .where('status','==','active').get();
     }
 
@@ -13538,7 +14115,15 @@ async function attLoadStudents(classId){
     snap.forEach(doc=>arr.push({id:doc.id,...doc.data()}));
     arr.sort((a,b)=>parseInt(a.roll||a.rollNo||0)-parseInt(b.roll||b.rollNo||0));
     return arr;
-  }catch(e){console.error('attLoadStudents:',e);return[];}
+  }catch(e){
+    console.error('attLoadStudents:',e);
+    // If error contains "index" it means composite index is missing
+    if(e.message && e.message.toLowerCase().includes('index')){
+      showToast('⚠️ Firestore index needed for session filter. Check console for link.','warning',6000);
+      console.warn('🔥 Create this Firestore index:\nCollection: students\nFields: class (ASC), session (ASC), status (ASC)\nOr click the link in the error above.');
+    }
+    return[];
+  }
 }
 
 function attUpdateMonthLabel(){const el=document.getElementById('att-month-label');if(el)el.textContent=attMonthName(Att.month);}
@@ -13546,8 +14131,15 @@ function attUpdateMonthLabel(){const el=document.getElementById('att-month-label
 function attChangeMonth(dir){
   const d=new Date(Att.month);d.setMonth(d.getMonth()+dir);
   const now=new Date();
-  if(d.getFullYear()>now.getFullYear()||(d.getFullYear()===now.getFullYear()&&d.getMonth()>now.getMonth())){showToast('Cannot view future months','warning');return;}
-  if(Att.sessionData?.startDate){const sd=new Date(Att.sessionData.startDate);if(d<new Date(sd.getFullYear(),sd.getMonth(),1)){showToast('Cannot go before session start','warning');return;}}
+  // For old (readonly) sessions: allow browsing within session start→end range
+  if(Att._sessionReadonly){
+    if(Att.sessionData?.startDate){const sd=new Date(Att.sessionData.startDate);if(d<new Date(sd.getFullYear(),sd.getMonth(),1)){showToast('Cannot go before session start','warning');return;}}
+    if(Att.sessionData?.endDate){const ed=new Date(Att.sessionData.endDate);if(d>new Date(ed.getFullYear(),ed.getMonth(),1)){showToast('Cannot go past session end','warning');return;}}
+  } else {
+    // Active session: block future months
+    if(d.getFullYear()>now.getFullYear()||(d.getFullYear()===now.getFullYear()&&d.getMonth()>now.getMonth())){showToast('Cannot view future months','warning');return;}
+    if(Att.sessionData?.startDate){const sd=new Date(Att.sessionData.startDate);if(d<new Date(sd.getFullYear(),sd.getMonth(),1)){showToast('Cannot go before session start','warning');return;}}
+  }
   Att.month=d;attUpdateMonthLabel();attRenderView();
 }
 
@@ -13735,9 +14327,9 @@ function attRenderRegister(y,m){
 
       // Open day — clickable
       const st=(Att.cache[dk]||{})[s.id]||'N';
-      const bg=st==='P'?'rgba(0,255,136,0.15)':st==='A'?'rgba(255,68,102,0.15)':st==='H'?'rgba(122,155,186,0.15)':'rgba(255,170,0,0.1)';
-      const col=st==='P'?'#00ff88':st==='A'?'#ff4466':st==='H'?'#7a9bba':'#ffaa00';
-      const lbl=st==='P'?'✅ P':st==='A'?'❌ A':st==='H'?'🏖 H':'? NM';
+      const bg=st==='P'?'rgba(0,255,136,0.15)':st==='A'?'rgba(255,68,102,0.15)':'rgba(255,170,0,0.1)';
+      const col=st==='P'?'#00ff88':st==='A'?'#ff4466':'#ffaa00';
+      const lbl=st==='P'?'✅ P':st==='A'?'❌ A':'? NM';
       html+=`<td style="border-bottom:1px solid rgba(30,58,95,0.3);${cellBg}padding:2px;">
         <div onclick="attCycleStatus(event,'${dk}','${s.id}')"
           style="width:52px;height:32px;margin:auto;display:flex;align-items:center;justify-content:center;background:${bg};color:${col};font-size:10px;font-weight:700;cursor:pointer;border-radius:4px;user-select:none;">${lbl}</div></td>`;
@@ -13879,8 +14471,8 @@ function attRenderCalendar(y,m){
   if(wd) wd.textContent=openCount;
 }
 
-// Cycle order: N → P → A → H → N
-const ATT_CYCLE = {N:'P', P:'A', A:'H', H:'N'};
+// Cycle order: N → P → A → N  (H is set from calendar only, not per-student)
+const ATT_CYCLE = {N:'P', P:'A', A:'N'};
 
 async function attCycleStatus(event, date, studentId){
   event.stopPropagation();
@@ -13888,9 +14480,9 @@ async function attCycleStatus(event, date, studentId){
   const current = (Att.cache[date]||{})[studentId]||'N';
   const next = ATT_CYCLE[current]||'P';
   // Update UI immediately (before await)
-  const bg = next==='P'?'rgba(0,255,136,0.15)':next==='A'?'rgba(255,68,102,0.15)':next==='H'?'rgba(122,155,186,0.15)':'rgba(255,170,0,0.1)';
-  const col = next==='P'?'#00ff88':next==='A'?'#ff4466':next==='H'?'#7a9bba':'#ffaa00';
-  const lbl = next==='P'?'✅ P':next==='A'?'❌ A':next==='H'?'🏖 H':'? NM';
+  const bg = next==='P'?'rgba(0,255,136,0.15)':next==='A'?'rgba(255,68,102,0.15)':'rgba(255,170,0,0.1)';
+  const col = next==='P'?'#00ff88':next==='A'?'#ff4466':'#ffaa00';
+  const lbl = next==='P'?'✅ P':next==='A'?'❌ A':'? NM';
   if(cell){ cell.style.background=bg; cell.style.color=col; cell.textContent=lbl; }
   // Then save to Firebase
   await attMark(Att.sessionId, Att.classId, date, studentId, next);
@@ -14270,6 +14862,32 @@ async function sAttRender(){
   if(pctEl){
     pctEl.textContent=stats.pct!==null?stats.pct+'%':'N/A';
     pctEl.style.color=stats.pct===null?'var(--text-muted)':stats.pct>=75?'#00ff88':stats.pct>=50?'#ffaa00':'#ff4466';
+  }
+  // Update progress bar
+  const total=stats.P+stats.A;
+  const pct=stats.pct;
+  const barFill=document.getElementById('s-att-bar-fill');
+  const barTotal=document.getElementById('s-att-bar-total');
+  const barP=document.getElementById('s-att-bar-p');
+  const barA=document.getElementById('s-att-bar-a');
+  const barPct=document.getElementById('s-att-bar-pct');
+  if(barTotal) barTotal.textContent=total||'0';
+  if(barP) barP.textContent=stats.P;
+  if(barA) barA.textContent=stats.A;
+  if(barPct){
+    barPct.textContent=pct!==null?pct+'%':'N/A';
+    barPct.style.color=pct===null?'var(--text-muted)':pct>=75?'#00ff88':pct>=50?'#ffaa00':'#ff4466';
+  }
+  if(barFill){
+    const fillColor=pct===null?'#7a9bba':pct>=75?'linear-gradient(90deg,#00c853,#00ff88)':pct>=50?'linear-gradient(90deg,#e65c00,#ffaa00)':'linear-gradient(90deg,#c62828,#ff4466)';
+    barFill.style.transition='none';       // disable transition
+    barFill.style.width='0%';             // snap to 0
+    barFill.style.background=fillColor;
+    barFill.offsetWidth;                  // force reflow — browser MUST render 0% before next line
+    barFill.style.transition='width 0.6s cubic-bezier(.4,0,.2,1)'; // re-enable
+    requestAnimationFrame(()=>{
+      barFill.style.width=(pct!==null?pct:0)+'%'; // animate to target
+    });
   }
 }
 
@@ -14896,6 +15514,254 @@ function sLbRowHTML(entry,isMe){
 }
 
 window.addEventListener('online',()=>attSyncQ());
+
+// =============================================================
+// ADMIN LEADERBOARD
+// =============================================================
+const ALb = { tab:'month', month:new Date(), sessionId:null, allSessions:[], data:[] };
+
+function aLbSwitchCategory(cat){
+  const att=document.getElementById('alb-cat-attendance');
+  const exam=document.getElementById('alb-cat-exam');
+  const attP=document.getElementById('alb-panel-attendance');
+  const examP=document.getElementById('alb-panel-exam');
+  if(cat==='attendance'){
+    att.style.cssText='padding:12px 20px;font-family:Rajdhani,sans-serif;font-weight:700;font-size:var(--fs-base);cursor:pointer;color:var(--neon-blue);border-bottom:3px solid var(--neon-blue);margin-bottom:-2px;transition:all 0.15s;';
+    exam.style.cssText='padding:12px 20px;font-family:Rajdhani,sans-serif;font-weight:700;font-size:var(--fs-base);cursor:pointer;color:var(--text-dim);border-bottom:3px solid transparent;margin-bottom:-2px;transition:all 0.15s;position:relative;';
+    attP.classList.remove('hidden'); examP.classList.add('hidden');
+  } else {
+    exam.style.cssText='padding:12px 20px;font-family:Rajdhani,sans-serif;font-weight:700;font-size:var(--fs-base);cursor:pointer;color:#ffaa00;border-bottom:3px solid #ffaa00;margin-bottom:-2px;transition:all 0.15s;position:relative;';
+    att.style.cssText='padding:12px 20px;font-family:Rajdhani,sans-serif;font-weight:700;font-size:var(--fs-base);cursor:pointer;color:var(--text-dim);border-bottom:3px solid transparent;margin-bottom:-2px;transition:all 0.15s;';
+    examP.classList.remove('hidden'); attP.classList.add('hidden');
+  }
+}
+
+async function initAdminLeaderboard(){
+  // Load sessions
+  const sel=document.getElementById('alb-session-select');
+  try{
+    const snap=await db.collection('sessions').orderBy('createdAt','desc').get();
+    ALb.allSessions=[];
+    snap.forEach(doc=>ALb.allSessions.push({id:doc.id,...doc.data()}));
+    if(sel){
+      sel.innerHTML=ALb.allSessions.map(s=>
+        `<option value="${s.id}"${s.isActive?' selected':''}>${s.id}${s.isActive?' (Active)':''}</option>`
+      ).join('');
+      ALb.sessionId=sel.value;
+    }
+  }catch(e){ console.error('initAdminLeaderboard sessions:',e); }
+  // Load class filter
+  const cf=document.getElementById('alb-class-filter');
+  if(cf){
+    try{
+      const snap=await db.collection('classes').orderBy('order').get();
+      cf.innerHTML='<option value="">All Classes</option>';
+      snap.forEach(doc=>{
+        const d=doc.data();
+        const o=document.createElement('option');
+        o.value=doc.id; o.textContent=`${d.board||'BSEB'} ${d.name}`;
+        cf.appendChild(o);
+      });
+    }catch(e){}
+  }
+  ALb.month=new Date();
+  aLbUpdateMonthLabel();
+  aLbSwitchTab('month');
+  aLbLoad();
+}
+
+function aLbSwitchTab(tab){
+  ALb.tab=tab;
+  const m=document.getElementById('alb-tab-month');
+  const o=document.getElementById('alb-tab-overall');
+  const nav=document.getElementById('alb-month-nav');
+  if(m){m.style.background=tab==='month'?'rgba(0,212,255,0.1)':'var(--bg-card2)';m.style.color=tab==='month'?'var(--neon-blue)':'var(--text-muted)';m.style.borderColor=tab==='month'?'var(--neon-blue)':'var(--border)';}
+  if(o){o.style.background=tab==='overall'?'rgba(0,212,255,0.1)':'var(--bg-card2)';o.style.color=tab==='overall'?'var(--neon-blue)':'var(--text-muted)';o.style.borderColor=tab==='overall'?'var(--neon-blue)':'var(--border)';}
+  if(nav) nav.style.display=tab==='month'?'flex':'none';
+  aLbLoad();
+}
+
+function aLbChangeMonth(dir){
+  const d=new Date(ALb.month); d.setMonth(d.getMonth()+dir);
+  ALb.month=d; aLbUpdateMonthLabel(); aLbLoad();
+}
+
+function aLbUpdateMonthLabel(){
+  const el=document.getElementById('alb-month-label');
+  if(el) el.textContent=ALb.month.toLocaleString('default',{month:'long',year:'numeric'});
+}
+
+async function aLbLoad(){
+  const sessionId=document.getElementById('alb-session-select')?.value||ALb.sessionId;
+  ALb.sessionId=sessionId;
+  const loading=document.getElementById('alb-loading');
+  const content=document.getElementById('alb-content');
+  const empty=document.getElementById('alb-empty');
+  const emptyMsg=document.getElementById('alb-empty-msg');
+
+  if(!sessionId){
+    if(loading) loading.classList.add('hidden');
+    if(empty){ empty.classList.remove('hidden'); if(emptyMsg) emptyMsg.textContent='No active session found. Please create a session first.'; }
+    return;
+  }
+
+  if(loading) loading.classList.remove('hidden');
+  if(content) content.classList.add('hidden');
+  if(empty) empty.classList.add('hidden');
+
+  try{
+    const classSnap=await db.collection('classes').orderBy('order').get();
+    const classes=[]; classSnap.forEach(doc=>classes.push({id:doc.id,...doc.data()}));
+    ALb.data=[];
+
+    if(ALb.tab==='month'){
+      const y=ALb.month.getFullYear(),m=ALb.month.getMonth();
+      const monthStr=`${y}-${String(m+1).padStart(2,'0')}`;
+      for(const cls of classes){
+        const board=(cls.board||'BSEB').toUpperCase();
+        const docId=lbGetDocId(sessionId,board,cls.name,monthStr);
+        try{
+          const snap=await db.collection('leaderboard').doc(docId).get();
+          if(snap.exists){
+            (snap.data().data||[]).forEach(e=>ALb.data.push({...e,classDisplay:`${board} ${cls.name}`}));
+          }
+        }catch{}
+      }
+    } else {
+      const sessData=ALb.allSessions.find(s=>s.id===sessionId);
+      const sd=sessData?.startDate;
+      if(!sd){
+        if(loading) loading.classList.add('hidden');
+        if(empty){ empty.classList.remove('hidden'); if(emptyMsg) emptyMsg.textContent='Session start date not set. Please set it in Sessions page.'; }
+        return;
+      }
+      const months=[]; let cur=new Date(new Date(sd).getFullYear(),new Date(sd).getMonth(),1); const now=new Date();
+      while(cur<=now){ months.push(`${cur.getFullYear()}-${String(cur.getMonth()+1).padStart(2,'0')}`); cur.setMonth(cur.getMonth()+1); }
+      for(const cls of classes){
+        const board=(cls.board||'BSEB').toUpperCase();
+        const totals={}; let published=0;
+        for(const monthStr of months){
+          try{
+            const snap=await db.collection('leaderboard').doc(lbGetDocId(sessionId,board,cls.name,monthStr)).get();
+            if(!snap.exists) continue; published++;
+            (snap.data().data||[]).forEach(e=>{
+              if(!totals[e.id]) totals[e.id]={id:e.id,name:e.name,roll:e.roll||'—',pcts:[],classDisplay:`${board} ${cls.name}`};
+              totals[e.id].pcts.push(e.pct);
+            });
+          }catch{}
+        }
+        if(!published) continue;
+        Object.values(totals).forEach(s=>{
+          const missed=published-s.pcts.length;
+          const avg=Math.round((s.pcts.reduce((a,b)=>a+b,0)+missed*75)/published);
+          ALb.data.push({...s,pct:avg});
+        });
+      }
+      ALb.data.sort((a,b)=>b.pct-a.pct||a.name.localeCompare(b.name));
+      let rank=1; for(let i=0;i<ALb.data.length;i++){ALb.data[i].rank=i>0&&ALb.data[i].pct===ALb.data[i-1].pct?ALb.data[i-1].rank:rank;rank++;}
+    }
+
+    if(loading) loading.classList.add('hidden');
+    aLbRender();
+  }catch(e){
+    console.error('aLbLoad:',e);
+    if(loading) loading.classList.add('hidden');
+    if(empty){ empty.classList.remove('hidden'); if(emptyMsg) emptyMsg.textContent='Failed to load. Please try again.'; }
+  }
+}
+
+function aLbRender(){
+  const content=document.getElementById('alb-content');
+  const empty=document.getElementById('alb-empty');
+  const emptyMsg=document.getElementById('alb-empty-msg');
+  if(!content) return;
+  const classFilter=document.getElementById('alb-class-filter')?.value||'';
+  const classFilterText=document.getElementById('alb-class-filter')?.options[document.getElementById('alb-class-filter')?.selectedIndex]?.textContent||'';
+
+  let data=ALb.data.slice();
+  if(ALb.tab==='month'){
+    data.sort((a,b)=>b.pct-a.pct||a.name.localeCompare(b.name));
+    let rank=1; for(let i=0;i<data.length;i++){data[i].rank=i>0&&data[i].pct===data[i-1].pct?data[i-1].rank:rank;rank++;}
+  }
+  const filtered=classFilter?data.filter(e=>e.classDisplay===classFilterText||e.classId===classFilter):data;
+
+  if(!filtered.length){
+    content.classList.add('hidden');
+    empty.classList.remove('hidden');
+    const now=new Date(); const next=new Date(ALb.month.getFullYear(),ALb.month.getMonth()+1,1);
+    const isCurrentMonth=ALb.month.getMonth()===now.getMonth()&&ALb.month.getFullYear()===now.getFullYear();
+    if(emptyMsg) emptyMsg.textContent=ALb.tab==='month'&&isCurrentMonth
+      ? `${ALb.month.toLocaleString('default',{month:'long',year:'numeric'})} leaderboard will publish on 1st ${next.toLocaleString('default',{month:'long',year:'numeric'})}.`
+      : 'No published data for this period.';
+    return;
+  }
+  empty.classList.add('hidden');
+
+  // Group by class
+  const byClass={};
+  filtered.forEach(e=>{ const k=e.classDisplay||e.classId; if(!byClass[k]) byClass[k]=[]; byClass[k].push(e); });
+
+  let html='';
+  if(!classFilter && filtered.length){
+    html+=`<div style="margin-bottom:24px;">
+      <div style="font-family:'Rajdhani',sans-serif;font-weight:700;font-size:var(--fs-md);color:var(--neon-blue);margin-bottom:10px;">🏆 Overall Top 10 — All Classes</div>
+      <div style="border:1px solid var(--border);border-radius:var(--radius-sm);overflow:hidden;">
+        <div style="display:grid;grid-template-columns:40px 1fr 70px 44px 50px;padding:8px 10px;background:var(--bg-card2);border-bottom:1px solid var(--border);font-size:10px;font-weight:700;color:var(--text-dim);letter-spacing:0.5px;">
+          <div>RANK</div><div>NAME</div><div style="text-align:center;">CLASS</div><div style="text-align:center;">ROLL</div><div style="text-align:right;">%</div>
+        </div>
+        ${filtered.slice(0,10).map(e=>aLbRowHTML(e,false)).join('')}
+      </div>
+    </div>`;
+  }
+
+  Object.entries(byClass).forEach(([cls,entries])=>{
+    const avg=Math.round(entries.reduce((s,e)=>s+e.pct,0)/entries.length);
+    html+=`<div style="margin-bottom:20px;">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+        <div style="font-family:'Rajdhani',sans-serif;font-weight:700;font-size:var(--fs-base);color:var(--text-white);">📚 ${cls}</div>
+        <span style="font-size:11px;color:var(--text-dim);">${entries.length} students</span>
+        <span style="font-size:11px;color:#00ff88;">Avg: ${avg}%</span>
+      </div>
+      <div style="border:1px solid var(--border);border-radius:var(--radius-sm);overflow:hidden;">
+        <div style="display:grid;grid-template-columns:40px 1fr 44px 50px;padding:8px 10px;background:var(--bg-card2);border-bottom:1px solid var(--border);font-size:10px;font-weight:700;color:var(--text-dim);letter-spacing:0.5px;">
+          <div>RANK</div><div>NAME</div><div style="text-align:center;">ROLL</div><div style="text-align:right;">%</div>
+        </div>
+        ${entries.map(e=>aLbRowHTML(e,true)).join('')}
+      </div>
+    </div>`;
+  });
+
+  content.innerHTML=html;
+  content.classList.remove('hidden');
+}
+
+function aLbRowHTML(entry, hideClass){
+  const rankEmoji=entry.rank===1?'🥇':entry.rank===2?'🥈':entry.rank===3?'🥉':`#${entry.rank}`;
+  const rankColor=entry.rank===1?'#FFD700':entry.rank===2?'#C0C0C0':entry.rank===3?'#CD7F32':'var(--text-muted)';
+  const pctColor=entry.pct>=75?'#00ff88':entry.pct>=50?'#ffaa00':'#ff4466';
+  const clsDisplay=entry.classDisplay||(entry.classId||'').replace(/^class-/i,'Class ');
+  if(hideClass){
+    return `<div style="display:grid;grid-template-columns:40px 1fr 44px 50px;padding:9px 10px;background:var(--bg-card2);border-top:1px solid rgba(30,58,95,0.4);align-items:center;">
+      <div style="font-size:${entry.rank<=3?'15px':'12px'};font-weight:700;color:${rankColor};font-family:'Rajdhani',sans-serif;">${rankEmoji}</div>
+      <div style="font-family:'Rajdhani',sans-serif;font-weight:600;font-size:var(--fs-sm);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${entry.name}</div>
+      <div style="font-size:var(--fs-xs);color:var(--text-muted);text-align:center;">${entry.roll}</div>
+      <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:${pctColor};font-size:var(--fs-sm);text-align:right;">${entry.pct}%</div>
+    </div>`;
+  }
+  return `<div style="display:grid;grid-template-columns:40px 1fr 70px 44px 50px;padding:9px 10px;background:var(--bg-card2);border-top:1px solid rgba(30,58,95,0.4);align-items:center;">
+    <div style="font-size:${entry.rank<=3?'15px':'12px'};font-weight:700;color:${rankColor};font-family:'Rajdhani',sans-serif;">${rankEmoji}</div>
+    <div style="font-family:'Rajdhani',sans-serif;font-weight:600;font-size:var(--fs-sm);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${entry.name}</div>
+    <div style="font-size:10px;color:var(--text-muted);text-align:center;">${clsDisplay}</div>
+    <div style="font-size:var(--fs-xs);color:var(--text-muted);text-align:center;">${entry.roll}</div>
+    <div style="font-family:'Rajdhani',sans-serif;font-weight:700;color:${pctColor};font-size:var(--fs-sm);text-align:right;">${entry.pct}%</div>
+  </div>`;
+}
+
+
+// =============================================================
+// ADMIN LEADERBOARD — reads published Firestore data
+// Reuses lbGetDocId + sLbRowHTML from student side
+// =============================================================
 
 // =============================================================
 // OPEN MATERIAL — Smart URL handler
