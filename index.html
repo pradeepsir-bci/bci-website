@@ -1924,11 +1924,11 @@ function showPage(pageId, addHistory = true) {
   document.querySelector('.sidebar')?.classList.remove('mobile-open');
   const bd0=document.getElementById('sidebar-backdrop'); if(bd0) bd0.style.display='none';
 
-  // Always hide dashboard-area when navigating to a public page.
-  // This prevents the blueish dashboard background showing behind the homepage
-  // when session expires and showPage('page-home') is called.
+  // Always hide both dashboard areas when navigating to a public page.
   const dashArea = document.getElementById('dashboard-area');
   if (dashArea) dashArea.style.display = 'none';
+  const adminDashArea = document.getElementById('admin-dashboard-area');
+  if (adminDashArea) adminDashArea.style.display = 'none';
 
   // Re-apply saved logo + institute data to homepage elements whenever
   // returning to the public homepage (after logout or session expiry).
@@ -3803,6 +3803,8 @@ function handleLogout() {
   // Clear dashboard HTML to free memory
   const dashArea = document.getElementById('dashboard-area');
   if (dashArea) dashArea.remove();
+  const adminDashArea = document.getElementById('admin-dashboard-area');
+  if (adminDashArea) adminDashArea.remove();
   showPage('page-home');
 }
 
@@ -4379,6 +4381,46 @@ function buildStudentDashboardHTML() {
           </div>
         </div>
 
+        <!-- Quick Links: Rate Us / YouTube / Maps -->
+        <div id="s-quick-links" style="margin-bottom:24px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;">
+          <a id="s-link-review" href="#" target="_blank" rel="noopener"
+            style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;
+                   padding:14px 8px;border-radius:var(--radius);text-decoration:none;
+                   background:rgba(255,180,0,0.08);border:1px solid rgba(255,180,0,0.3);
+                   color:#ffb400;font-family:'Rajdhani',sans-serif;font-weight:700;
+                   font-size:var(--fs-xs);text-align:center;transition:all 0.2s;
+                   -webkit-tap-highlight-color:transparent;"
+            onmouseenter="this.style.background='rgba(255,180,0,0.15)'"
+            onmouseleave="this.style.background='rgba(255,180,0,0.08)'">
+            <span style="font-size:20px;">⭐</span>
+            Rate Us on Google
+          </a>
+          <a id="s-link-youtube" href="#" target="_blank" rel="noopener"
+            style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;
+                   padding:14px 8px;border-radius:var(--radius);text-decoration:none;
+                   background:rgba(255,50,50,0.08);border:1px solid rgba(255,50,50,0.3);
+                   color:#ff4444;font-family:'Rajdhani',sans-serif;font-weight:700;
+                   font-size:var(--fs-xs);text-align:center;transition:all 0.2s;
+                   -webkit-tap-highlight-color:transparent;"
+            onmouseenter="this.style.background='rgba(255,50,50,0.15)'"
+            onmouseleave="this.style.background='rgba(255,50,50,0.08)'">
+            <span style="font-size:20px;">▶️</span>
+            YouTube Channel
+          </a>
+          <a id="s-link-maps" href="#" target="_blank" rel="noopener"
+            style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;
+                   padding:14px 8px;border-radius:var(--radius);text-decoration:none;
+                   background:rgba(0,212,255,0.06);border:1px solid rgba(0,212,255,0.25);
+                   color:var(--neon-blue);font-family:'Rajdhani',sans-serif;font-weight:700;
+                   font-size:var(--fs-xs);text-align:center;transition:all 0.2s;
+                   -webkit-tap-highlight-color:transparent;"
+            onmouseenter="this.style.background='rgba(0,212,255,0.12)'"
+            onmouseleave="this.style.background='rgba(0,212,255,0.06)'">
+            <span style="font-size:20px;">📍</span>
+            Find Us on Maps
+          </a>
+        </div>
+
         <!-- Latest notices on dashboard -->
         <div class="card" style="margin-bottom:24px;">
           <div class="card-title">📢 Latest <span>Notices</span></div>
@@ -4890,26 +4932,26 @@ function buildStudentDashboardHTML() {
 
   <!-- ── Student ID Card Modal ── -->
   <div id="modal-id-card" class="modal-overlay" style="display:none;position:fixed;inset:0;z-index:9999;
-       background:rgba(0,0,0,0.85);display:none;align-items:center;justify-content:center;padding:16px;">
-    <div style="width:100%;max-width:360px;position:relative;">
+       background:rgba(0,0,0,0.85);align-items:center;justify-content:center;padding:12px;box-sizing:border-box;overflow-y:auto;">
+    <div style="width:100%;max-width:340px;position:relative;margin:auto;box-sizing:border-box;">
       <!-- Close -->
       <button onclick="document.getElementById('modal-id-card').style.display='none'"
-        style="position:absolute;top:-40px;right:0;background:none;border:none;color:#fff;
-               font-size:24px;cursor:pointer;z-index:10;">✕</button>
+        style="position:absolute;top:-36px;right:0;background:none;border:none;color:#fff;
+               font-size:24px;cursor:pointer;z-index:10;line-height:1;">✕</button>
       <!-- Card canvas area -->
-      <canvas id="id-card-canvas" style="width:100%;border-radius:16px;display:block;
-              box-shadow:0 0 40px rgba(0,212,255,0.3);"></canvas>
+      <canvas id="id-card-canvas" style="width:100%;max-width:100%;border-radius:12px;display:block;
+              box-shadow:0 0 30px rgba(0,212,255,0.3);box-sizing:border-box;"></canvas>
       <!-- Action buttons -->
-      <div style="display:flex;gap:10px;margin-top:14px;">
+      <div style="display:flex;gap:8px;margin-top:10px;">
         <button onclick="downloadIdCard()"
-          style="flex:1;padding:12px;background:linear-gradient(135deg,var(--neon-blue),#0099cc);
-                 border:none;border-radius:10px;color:#000;font-weight:700;font-size:15px;
+          style="flex:1;padding:10px;background:linear-gradient(135deg,var(--neon-blue),#0099cc);
+                 border:none;border-radius:10px;color:#000;font-weight:700;font-size:14px;
                  font-family:'Rajdhani',sans-serif;cursor:pointer;">
           ⬇️ Download
         </button>
         <button onclick="shareIdCard()"
-          style="flex:1;padding:12px;background:linear-gradient(135deg,#7c3aed,#a855f7);
-                 border:none;border-radius:10px;color:#fff;font-weight:700;font-size:15px;
+          style="flex:1;padding:10px;background:linear-gradient(135deg,#7c3aed,#a855f7);
+                 border:none;border-radius:10px;color:#fff;font-weight:700;font-size:14px;
                  font-family:'Rajdhani',sans-serif;cursor:pointer;">
           📤 Share
         </button>
@@ -5165,6 +5207,20 @@ async function initStudentDashboard() {
 
   // Always await institute data so logo appears immediately without needing a refresh
   await loadInstituteInfo();
+
+  // Populate quick links from institute data
+  const inst = window._instituteData || {};
+  const reviewLink  = document.getElementById('s-link-review');
+  const youtubeLink = document.getElementById('s-link-youtube');
+  const mapsLink    = document.getElementById('s-link-maps');
+  if(reviewLink  && inst.hpReviewUrl)  reviewLink.href  = inst.hpReviewUrl;
+  if(youtubeLink && inst.hpYoutubeUrl) youtubeLink.href = inst.hpYoutubeUrl;
+  if(mapsLink    && inst.hpMapsUrl)    mapsLink.href    = inst.hpMapsUrl;
+  // Hide quick links section if none of the links are set
+  const quickLinks = document.getElementById('s-quick-links');
+  if(quickLinks && !inst.hpReviewUrl && !inst.hpYoutubeUrl && !inst.hpMapsUrl){
+    quickLinks.style.display = 'none';
+  }
 
   console.log('✅ Student dashboard initialized for:', AppState.currentUser.name);
 
@@ -5545,7 +5601,7 @@ async function loadStudentFolders(parentFolderId = null) {
     let foldersSnap, filesSnap;
     try {
       [foldersSnap, filesSnap] = await Promise.all([
-        foldersQuery.orderBy('sortOrder').get(),
+        foldersQuery.get(),   // No orderBy in query — sort in JS below (avoids index dependency)
         db.collection('materials')
           .where('classId', '==', classId)
           .where('isLocked', '==', false)
@@ -5553,15 +5609,14 @@ async function loadStudentFolders(parentFolderId = null) {
           .orderBy('createdAt', 'desc').get()
       ]);
     } catch(indexErr) {
-      // Fallback: index not yet created — load without sortOrder, JS sort will handle it
-      console.warn('sortOrder index missing, falling back to name order. Create index in Firebase console.');
+      console.warn('Student folder load error, retrying without materials orderBy:', indexErr);
       [foldersSnap, filesSnap] = await Promise.all([
         foldersQuery.get(),
         db.collection('materials')
           .where('classId', '==', classId)
           .where('isLocked', '==', false)
           .where('folderId', '==', parentFolderId || 'root')
-          .orderBy('createdAt', 'desc').get()
+          .get()
       ]);
     }
 
@@ -6461,6 +6516,8 @@ console.log('✅ PART 3: Student Dashboard loaded');
 function buildAdminDashboardHTML() {
   const existing = document.getElementById('dashboard-area');
   if (existing) existing.remove();
+  const existingAdmin = document.getElementById('admin-dashboard-area');
+  if (existingAdmin) existingAdmin.remove();
 
   document.body.insertAdjacentHTML('beforeend', `
 
@@ -12393,12 +12450,23 @@ async function handleAddFolder() {
   }
 
   try {
+    // Get current max sortOrder to place new folder at end
+    const existingSnap = await db.collection('folders')
+      .where('classId', '==', classId)
+      .where('parentFolderId', '==', parentId)
+      .get();
+    const maxSort = existingSnap.docs.reduce((max, d) => {
+      const s = d.data().sortOrder;
+      return (s !== undefined && s > max) ? s : max;
+    }, -1);
+
     await db.collection('folders').add({
       name,
       classId,
       parentFolderId: parentId,   // null = root level
       isLocked,
       unlockTimer: null,
+      sortOrder: maxSort + 1,
       createdAt: firebase.firestore.FieldValue.serverTimestamp()
     });
 
@@ -12891,7 +12959,15 @@ async function confirmMoveFolder() {
   // destId 'root' → parentFolderId = null, else use the selected folder id
   const newParent = destId === 'root' ? null : destId;
   try {
-    await db.collection('folders').doc(folderId).update({ parentFolderId: newParent });
+    // Also inherit classId from destination folder (or keep current if moving to root)
+    let updateData = { parentFolderId: newParent };
+    if (destId !== 'root') {
+      const destDoc = await db.collection('folders').doc(destId).get();
+      if (destDoc.exists && destDoc.data().classId) {
+        updateData.classId = destDoc.data().classId;
+      }
+    }
+    await db.collection('folders').doc(folderId).update(updateData);
     showToast('📦 Folder moved successfully!', 'success');
     closeModal('modal-move-folder');
     loadAdminFolderContents(AdminFolderState.currentFolderId);
@@ -15618,7 +15694,7 @@ function showStudentIdCard(){
   generateIdCard();
 }
 
-async function generateIdCard(){
+async function generateIdCard(skipPhoto = false){
   const student = AppState.currentUser;
   if(!student) return;
   const canvas = document.getElementById('id-card-canvas');
@@ -15663,12 +15739,12 @@ async function generateIdCard(){
   const validTill = sessEnd ? 'Valid Till: March ' + sessEnd : '';
 
   // Portrait ID card: 54mm × 86mm at 96dpi → 204 × 325px → scale 3x
-  const SCALE = 3;
-  const W = 340, H = 496;
+  const SCALE = 2;
+  const W = 320, H = 490;
   canvas.width  = W * SCALE;
   canvas.height = H * SCALE;
-  canvas.style.width  = W + 'px';
-  canvas.style.height = H + 'px';
+  canvas.style.width  = '100%';   // responsive — fills container width
+  canvas.style.height = 'auto';   // auto height maintains aspect ratio
   const ctx = canvas.getContext('2d');
   ctx.scale(SCALE, SCALE);
 
@@ -15715,15 +15791,15 @@ async function generateIdCard(){
   // Institute name next to logo
   const tx = logoX + logoSize + 10;
   ctx.fillStyle = '#00d4ff';
-  ctx.font = 'bold 16px Rajdhani, sans-serif';
+  ctx.font = 'bold 18px Rajdhani, sans-serif';
   ctx.fillText(instShort, tx, logoY + 16);
   ctx.fillStyle = 'rgba(255,255,255,0.9)';
-  ctx.font = 'bold 10px Rajdhani, sans-serif';
+  ctx.font = 'bold 13px Rajdhani, sans-serif';
   // Wrap long name
   const maxW = W - tx - 10;
-  wrapText(ctx, instName, tx, logoY + 30, maxW, 12);
+  wrapText(ctx, instName, tx, logoY + 30, maxW, 14);
   ctx.fillStyle = 'rgba(255,255,255,0.45)';
-  ctx.font = '9px Arial, sans-serif';
+  ctx.font = '10px Arial, sans-serif';
   ctx.fillText(instCity, tx, logoY + 54);
 
   // Divider
@@ -15744,10 +15820,10 @@ async function generateIdCard(){
   ctx.strokeStyle='rgba(0,212,255,0.7)'; ctx.lineWidth=2;
   ctx.beginPath(); ctx.roundRect(pX, pY, pW, pH, pR); ctx.stroke();
   ctx.shadowBlur=0;
-  // Photo
+  // Photo — skip if skipPhoto=true (avoids tainted canvas for share/download)
   ctx.save();
   ctx.beginPath(); ctx.roundRect(pX, pY, pW, pH, pR); ctx.clip();
-  if(student.photo){
+  if(student.photo && !skipPhoto){
     try{
       const pImg = await loadImage(student.photo);
       ctx.drawImage(pImg, pX, pY, pW, pH);
@@ -15757,20 +15833,20 @@ async function generateIdCard(){
 
   // ── STUDENT NAME (below photo, centered) ──
   ctx.fillStyle = '#ffffff';
-  ctx.font = 'bold 15px Rajdhani, sans-serif';
+  ctx.font = 'bold 14px Rajdhani, sans-serif';
   ctx.textAlign = 'center';
   ctx.fillText((student.name || '—').split(' ').map(w=>w.charAt(0).toUpperCase()+w.slice(1)).join(' '), W/2, pY + pH + 19);
   ctx.textAlign = 'left';
 
   // ── DATA FIELDS ──
-  const fy = pY + pH + 30, lh = 32, lx = 18, rVal = 18;
+  const fy = pY + pH + 28, lh = 30, lx = 16, rVal = 16;
 
   function field(label, value, y, color){
     ctx.fillStyle = 'rgba(0,212,255,0.55)';
-    ctx.font = '8px Rajdhani, sans-serif';
+    ctx.font = '9px Rajdhani, sans-serif';
     ctx.fillText(label, lx, y);
     ctx.fillStyle = color || 'rgba(255,255,255,0.92)';
-    ctx.font = 'bold 13px Rajdhani, sans-serif';
+    ctx.font = 'bold 14px Rajdhani, sans-serif';
     ctx.fillText(value, lx, y + 13);
     // subtle underline
     ctx.strokeStyle = 'rgba(255,255,255,0.05)'; ctx.lineWidth = 0.5;
@@ -15880,20 +15956,39 @@ async function shareIdCard(){
   const canvas = document.getElementById('id-card-canvas');
   if(!canvas) return;
   try{
-    canvas.toBlob(async (blob)=>{
-      const file = new File([blob], 'BCI-Student-ID.png', {type:'image/png'});
-      if(navigator.canShare && navigator.canShare({files:[file]})){
-        await navigator.share({
-          title: 'My BCI Student ID Card',
-          text: 'My Student ID Card — Brilliant Coaching Institute, Buxar',
-          files: [file]
-        });
-      } else {
-        // Fallback: download
-        downloadIdCard();
-        showToast('Sharing not supported on this device — downloaded instead.','info',3000);
-      }
-    }, 'image/png');
+    // Convert canvas to blob — use dataURL fallback for Android browsers
+    // where toBlob() may return null
+    let blob;
+    try{
+      blob = await new Promise((res, rej) => {
+        canvas.toBlob(b => {
+          if(b) res(b);
+          else rej(new Error('toBlob returned null'));
+        }, 'image/png');
+      });
+    } catch {
+      // Fallback: convert dataURL to blob manually
+      const dataUrl = canvas.toDataURL('image/png');
+      const arr = dataUrl.split(',');
+      const mime = arr[0].match(/:(.*?);/)[1];
+      const bstr = atob(arr[1]);
+      let n = bstr.length;
+      const u8arr = new Uint8Array(n);
+      while(n--) u8arr[n] = bstr.charCodeAt(n);
+      blob = new Blob([u8arr], {type: mime});
+    }
+
+    const file = new File([blob], 'BCI-Student-ID.png', {type:'image/png'});
+    if(navigator.canShare && navigator.canShare({files:[file]})){
+      await navigator.share({
+        title: 'My BCI Student ID Card',
+        text: 'My Student ID Card — Brilliant Coaching Institute, Buxar',
+        files: [file]
+      });
+    } else {
+      downloadIdCard();
+      showToast('Sharing not supported — downloaded instead.','info',3000);
+    }
   }catch(e){
     if(e.name!=='AbortError') showToast('Could not share. Try downloading instead.','warning',3000);
   }
