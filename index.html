@@ -173,8 +173,13 @@
 <script>
   const CLOUDINARY_CLOUD_NAME    = 'dtebha50r';
   const CLOUDINARY_UPLOAD_PRESET = 'bci_materials';
-  const CLOUDINARY_UPLOAD_URL    =
-    `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/raw/upload`;
+  // Upload URL is now dynamic — set per file type in uploadToCloudinary()
+  // PDF/DOC/other → /raw/upload
+  // Audio (mp3, wav etc.) → /video/upload  (Cloudinary requirement)
+  // Image → /image/upload
+  const CLOUDINARY_UPLOAD_URL_RAW   = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/raw/upload`;
+  const CLOUDINARY_UPLOAD_URL_VIDEO = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/video/upload`;
+  const CLOUDINARY_UPLOAD_URL_IMAGE = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`;
 </script>
 
 <style>
@@ -237,6 +242,8 @@
 }
 
 html { scroll-behavior: smooth; }
+
+/* Disable browser scroll restoration — SPA handles scroll manually */
 
 body {
   font-family: 'Hind', sans-serif;
@@ -331,6 +338,10 @@ code {
 }
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+@keyframes audioPulse {
+  0%,100% { transform: scale(1);    opacity: 0.85; }
+  50%      { transform: scale(1.06); opacity: 1;    }
 }
 @keyframes blink {
   0%, 100% { opacity: 1; }
@@ -1799,6 +1810,8 @@ input:checked + .slider:before {
 }
 
 </style>
+<!-- PDF.js — in-app PDF viewer -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 </head>
 <body>
 
@@ -1911,7 +1924,11 @@ function showToast(message, type = 'info', duration = 4000) {
 // UTILITY: Show/hide pages
 // Usage: showPage('page-id')
 // =============================================================
+// Disable browser auto-scroll-restoration — prevents random scroll jumps on SPA navigation
+if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+
 function showPage(pageId, addHistory = true) {
+  window.scrollTo(0, 0); // always start from top on page switch
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   const page = document.getElementById(pageId);
   if (page) {
@@ -1964,10 +1981,29 @@ function toggleSection(sectionId, headerEl) {
 // BROWSER BACK BUTTON — History API (SPA navigation)
 // =============================================================
 window.addEventListener('popstate', (e) => {
+  // If PDF viewer is open — back button closes it
+  const pdfModal = document.getElementById('modal-pdf-viewer');
+  if (pdfModal && pdfModal.style.display === 'flex') {
+    closePdfViewer();
+    return;
+  }
+  // If Audio player is open — back button closes it
+  const audioModal = document.getElementById('modal-audio-player');
+  if (audioModal && audioModal.style.display === 'flex') {
+    closeAudioPlayer();
+    return;
+  }
+  // If mini player is showing — back button closes audio completely
+  const miniTab = document.getElementById('audio-mini-tab');
+  if (miniTab && miniTab.style.display !== 'none' && miniTab.style.display !== '') {
+    closeAudioPlayer();
+    return;
+  }
+
   const state = e.state;
+
   if (!state) {
-    // No state = user went all the way back before any navigation
-    // If logged in, stay on dashboard root — don't exit
+    // No state — user went back before any navigation
     if (AppState.isAdmin) {
       showAdminPage('a-page-home', false);
     } else if (AppState.currentUser) {
@@ -2387,9 +2423,11 @@ window.addEventListener('load', async () => {
     if (data.isAdmin) {
       AppState.isAdmin = true;
       AppState.currentUser = data.user;
+      window.scrollTo(0, 0); // scroll reset on login success
       initAdminDashboard();
     } else if (data.user) {
       AppState.currentUser = data.user;
+      window.scrollTo(0, 0); // scroll reset on login success
       initStudentDashboard();
     } else {
       showPage('page-home');
@@ -3316,6 +3354,7 @@ async function handleStudentLogin() {
           document.getElementById('login-session').value = '';
           document.getElementById('login-roll').value = '';
           document.getElementById('login-password').value = '';
+          window.scrollTo(0, 0); // scroll reset on login success
           initStudentDashboard();
         }
       };
@@ -3335,6 +3374,7 @@ async function handleStudentLogin() {
     document.getElementById('login-roll').value = '';
     document.getElementById('login-password').value = '';
 
+    window.scrollTo(0, 0); // scroll reset on login success
     initStudentDashboard();
 
   } catch (err) {
@@ -3422,6 +3462,7 @@ async function handleAdminLogin() {
             setTimeout(() => { showSessionExpiry(); startSessionCountdownTick(); }, 500);
             document.getElementById('admin-username').value = '';
             document.getElementById('admin-password').value = '';
+            window.scrollTo(0, 0); // scroll reset on login success
             initAdminDashboard();
           }
         };
@@ -3441,6 +3482,7 @@ async function handleAdminLogin() {
       document.getElementById('admin-username').value = '';
       document.getElementById('admin-password').value = '';
 
+      window.scrollTo(0, 0); // scroll reset on login success
       initAdminDashboard();
     } else {
       showLoginError('Invalid admin credentials. Please try again.');
@@ -3562,11 +3604,19 @@ async function submitRegistrationConfirmed() {
 
     // Handle photo
     let photoData = '';
-    const photoFile = document.getElementById('reg-photo').files[0];
-    if (photoFile) {
-      // Use pre-compressed photo if available, else compress now
-      photoData = window._regPhotoCompressed || await compressPhoto(photoFile);
-      window._regPhotoCompressed = null; // clear after use
+    // Check _regPhotoCompressed first — set by previewPhoto() for BOTH gallery and camera
+    // Then fallback to gallery file (compress on submit if not pre-compressed)
+    // Camera input (reg-photo-camera) sets _regPhotoCompressed via previewPhoto()
+    if (window._regPhotoCompressed) {
+      photoData = window._regPhotoCompressed;
+      window._regPhotoCompressed = null;
+    } else {
+      const photoFile = document.getElementById('reg-photo').files[0]
+                     || document.getElementById('reg-photo-camera').files[0];
+      if (photoFile) {
+        try { photoData = await compressPhoto(photoFile); }
+        catch(e) { photoData = ''; } // compress failed — skip photo
+      }
     }
 
     // Save to Firestore with new unique ID
@@ -3652,6 +3702,7 @@ function resetRegForm() {
 // =============================================================
 function compressPhoto(file, maxSize = 800, quality = 0.75) {
   return new Promise((resolve, reject) => {
+    // Accept any image type — camera can produce image/heic, image/heif, image/webp etc.
     if (!file || !file.type.startsWith('image/')) {
       reject('Not an image'); return;
     }
@@ -3659,19 +3710,29 @@ function compressPhoto(file, maxSize = 800, quality = 0.75) {
     reader.onload = e => {
       const img = new Image();
       img.onload = () => {
-        // Calculate new dimensions keeping aspect ratio
-        let w = img.width, h = img.height;
-        if (w > maxSize || h > maxSize) {
-          if (w > h) { h = Math.round(h * maxSize / w); w = maxSize; }
-          else       { w = Math.round(w * maxSize / h); h = maxSize; }
+        try {
+          // Calculate new dimensions keeping aspect ratio
+          let w = img.width, h = img.height;
+          // Camera photos can be very large (4000x3000+) — cap at maxSize
+          if (w > maxSize || h > maxSize) {
+            if (w > h) { h = Math.round(h * maxSize / w); w = maxSize; }
+            else       { w = Math.round(w * maxSize / h); h = maxSize; }
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = w; canvas.height = h;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, w, h);
+          // Try JPEG first, fallback to PNG if JPEG fails (some HEIC conversions)
+          let result = canvas.toDataURL('image/jpeg', quality);
+          if (!result || result === 'data:,') {
+            result = canvas.toDataURL('image/png');
+          }
+          resolve(result);
+        } catch(canvasErr) {
+          reject('Canvas error: ' + canvasErr.message);
         }
-        const canvas = document.createElement('canvas');
-        canvas.width = w; canvas.height = h;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, w, h);
-        resolve(canvas.toDataURL('image/jpeg', quality));
       };
-      img.onerror = () => reject('Could not load image');
+      img.onerror = () => reject('Could not load image — unsupported format');
       img.src = e.target.result;
     };
     reader.onerror = () => reject('Could not read file');
@@ -3785,6 +3846,8 @@ function showRegisterMsg(msg, type) {
 function handleLogout() {
   if (window._sessionTickInterval) clearInterval(window._sessionTickInterval);
   if (window._swCountdownInterval)  clearInterval(window._swCountdownInterval);
+  // Close audio player + mini player on logout — prevent audio playing after session ends
+  if (typeof closeAudioPlayer === 'function') closeAudioPlayer();
   // Clear Firestore session token so other devices know this session ended cleanly
   const raw = localStorage.getItem(SESSION_KEY);
   if (raw) {
@@ -4034,11 +4097,20 @@ async function loadHomeNotices() {
   const container = document.getElementById('home-notices');
   if (!container) return;
   try {
-    const snap = await db.collection('notices')
-      .where('isPublic', '==', true)
-      .orderBy('createdAt', 'desc')
-      .limit(5)
-      .get();
+    let snap;
+    try {
+      snap = await db.collection('notices')
+        .where('isPublic', '==', true)
+        .orderBy('createdAt', 'desc')
+        .limit(5)
+        .get();
+    } catch(indexErr) {
+      // Fallback: no orderBy (avoids composite index requirement)
+      snap = await db.collection('notices')
+        .where('isPublic', '==', true)
+        .limit(10)
+        .get();
+    }
 
     // Filter: show only notices where showOnHome is true (or undefined = old notices default to true)
     const docs = snap.docs.filter(d => d.data().showOnHome !== false);
@@ -5197,7 +5269,7 @@ async function initStudentDashboard() {
   document.getElementById('dashboard-area').style.display = 'block';
 
   // Push initial history state so back button works from the start
-  history.pushState({ page: 's-page-home', area: 'student' }, '', '#s-page-home');
+  history.replaceState({ page: 's-page-home', area: 'student' }, '', '#s-page-home'); // replace login entry — back button won't return to login
 
   // Load all data
   loadStudentStats();
@@ -6347,6 +6419,66 @@ async function saveEditedProfile() {
     const docRef = AppState.currentUser.id || AppState.currentUser.mobile;
     await db.collection('students').doc(docRef).update(updateData);
     
+    // ── Save edit notification for admin ──────────────────────
+    try {
+      const _student  = AppState.currentUser;
+      const _prevData = {
+        name:       _student.name,
+        gender:     _student.gender,
+        dob:        _student.dob,
+        mobile:     _student.mobile,
+        altMobile:  _student.altMobile,
+        fatherName: _student.fatherName || _student.father,
+        motherName: _student.motherName || _student.mother,
+        address:    _student.address,
+        photo:      _student.photo
+      };
+      // Detect which fields changed
+      const _fieldLabels = {
+        name:'Name', gender:'Gender', dob:'Date of Birth',
+        mobile:'Mobile', altMobile:'Alt Mobile',
+        fatherName:"Father's Name", motherName:"Mother's Name",
+        address:'Address', photo:'Photo'
+      };
+      const _changed = Object.keys(_fieldLabels).filter(k => {
+        const prev = String(_prevData[k]||'').trim();
+        const next = String(k==='photo' ? (photoURL||'') : (updateData[k]||'')).trim();
+        // For photo, just check if it changed (don't store full base64)
+        if (k === 'photo') return (prev !== next);
+        return prev !== next;
+      }).map(k => _fieldLabels[k]);
+
+      if (_changed.length > 0) {
+        // Extract class from student ID (e.g. 2627-BSEB-10-001 → 10)
+        const _sid   = _student.id || _student.mobile || 'unknown';
+        const _parts = _sid.split('-');
+        const _class = _parts.length >= 3 ? _parts[2] : 'unknown';
+        await db.collection('adminNotifications').add({
+          studentId:     _sid,
+          studentName:   _student.name || 'Unknown',
+          studentClass:  _class,
+          changedFields: _changed,
+          editedAt:      firebase.firestore.FieldValue.serverTimestamp(),
+          read:          false
+        });
+        // Auto-cleanup: keep only latest 100 notifications (no orderBy — no index needed)
+        const _allNotifs = await db.collection('adminNotifications').get();
+        if (_allNotifs.size > 100) {
+          // Sort client-side by editedAt, delete oldest
+          const _sorted = _allNotifs.docs.sort((a, b) => {
+            const ta = a.data().editedAt?.toDate ? a.data().editedAt.toDate() : new Date(0);
+            const tb = b.data().editedAt?.toDate ? b.data().editedAt.toDate() : new Date(0);
+            return tb - ta; // newest first
+          });
+          const _toDelete = _sorted.slice(100); // keep first 100, delete rest
+          const _batch = db.batch();
+          _toDelete.forEach(d => _batch.delete(d.ref));
+          await _batch.commit();
+        }
+      }
+    } catch(_ne) { /* notification save failed silently — don't block profile save */ }
+    // ───────────────────────────────────────────────────────
+
     Object.assign(AppState.currentUser, updateData);
     // If mobile changed, update AppState so sidebar/session reflects new number
     if (updateData.mobile) AppState.currentUser.mobile = updateData.mobile;
@@ -6604,6 +6736,12 @@ function buildAdminDashboardHTML() {
         <div class="nav-item" data-page="a-page-leaderboard"
              onclick="showAdminPage('a-page-leaderboard'); initAdminLeaderboard();">
           <span class="nav-icon">🏆</span> Leaderboard
+        </div>
+
+        <div class="nav-item" data-page="a-page-notifications"
+             onclick="showAdminPage('a-page-notifications'); loadAdminNotifications();">
+          <span class="nav-icon">🔔</span> Notifications
+          <span class="nav-badge" id="notif-badge" style="display:none;">0</span>
         </div>
 
         <div class="nav-item" data-page="a-page-settings"
@@ -8021,6 +8159,52 @@ function buildAdminDashboardHTML() {
 
       </div><!-- end a-page-leaderboard -->
 
+      <!-- ================================================
+           ID: a-page-notifications
+      ================================================== -->
+      <div id="a-page-notifications" class="page" style="padding-bottom:24px;">
+        <div class="page-header">
+          <h1 class="page-title">🔔 Student Edit Notifications</h1>
+        </div>
+
+        <!-- Filters -->
+        <div style="display:flex; flex-wrap:wrap; gap:10px; margin-bottom:16px; align-items:center;">
+          <!-- Time filter -->
+          <div style="display:flex; gap:6px;">
+            <button id="notif-filter-all" onclick="notifSetFilter('all')"
+              class="btn btn-sm btn-primary" style="font-size:12px;">All</button>
+            <button id="notif-filter-today" onclick="notifSetFilter('today')"
+              class="btn btn-sm btn-ghost" style="font-size:12px;">Today</button>
+            <button id="notif-filter-month" onclick="notifSetFilter('month')"
+              class="btn btn-sm btn-ghost" style="font-size:12px;">This Month</button>
+          </div>
+          <!-- Class filter -->
+          <select id="notif-filter-class" onchange="notifApplyFilters()"
+            style="background:var(--bg-card2);border:1px solid var(--border);
+            color:var(--text-white);border-radius:var(--radius-sm);
+            padding:6px 10px;font-size:12px;cursor:pointer;">
+            <option value="all">All Classes</option>
+            <option value="6">Class 6</option>
+            <option value="7">Class 7</option>
+            <option value="8">Class 8</option>
+            <option value="9">Class 9</option>
+            <option value="10">Class 10</option>
+          </select>
+          <!-- Mark all read -->
+          <button onclick="notifMarkAllRead()"
+            class="btn btn-sm btn-ghost" style="font-size:12px; margin-left:auto;">
+            ✅ Mark All Read
+          </button>
+        </div>
+
+        <!-- Notification list -->
+        <div id="notif-list" style="display:flex; flex-direction:column; gap:10px;">
+          <div style="text-align:center; color:var(--text-dim); padding:40px 0;">
+            Loading notifications...
+          </div>
+        </div>
+      </div><!-- end a-page-notifications -->
+
     </main><!-- end admin main-content -->
   </div><!-- end admin app-layout -->
   </div><!-- end admin-dashboard-area -->
@@ -8470,6 +8654,8 @@ function setVal(id, val) {
   if (el) el.value = val || '';
 }
 async function initAdminDashboard() {
+  // Check unread notification count for badge
+  setTimeout(_notifCheckUnread, 1500); // slight delay to let Firebase connect
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   buildAdminDashboardHTML();
 
@@ -8480,7 +8666,7 @@ async function initAdminDashboard() {
   document.getElementById('admin-dashboard-area').style.display = 'block';
 
   // Push initial history state so back button works from the start
-  history.pushState({ page: 'a-page-home', area: 'admin' }, '', '#a-page-home');
+  history.replaceState({ page: 'a-page-home', area: 'admin' }, '', '#a-page-home'); // replace login entry — back button won't return to login
 
   // Load all dashboard data
   loadAdminStats();
@@ -8538,11 +8724,20 @@ async function loadAdminHomePending() {
   const container = document.getElementById('a-home-pending');
   if (!container) return;
   try {
-    const snap = await db.collection('students')
-      .where('status', '==', 'pending')
-      .orderBy('createdAt', 'desc')
-      .limit(5)
-      .get();
+    let snap;
+    try {
+      snap = await db.collection('students')
+        .where('status', '==', 'pending')
+        .orderBy('createdAt', 'desc')
+        .limit(5)
+        .get();
+    } catch(indexErr) {
+      // Fallback: no orderBy
+      snap = await db.collection('students')
+        .where('status', '==', 'pending')
+        .limit(10)
+        .get();
+    }
 
     if (snap.empty) {
       container.innerHTML = `
@@ -8615,10 +8810,13 @@ async function loadPendingStudents() {
       });
     }
 
-    const snap = await db.collection('students')
-      .where('status', '==', 'pending')
-      .orderBy('createdAt', 'desc')
-      .get();
+    const snap = await (async () => {
+      try {
+        return await db.collection('students').where('status','==','pending').orderBy('createdAt','desc').get();
+      } catch(e) {
+        return await db.collection('students').where('status','==','pending').get();
+      }
+    })();
 
     if (snap.empty) {
       container.innerHTML = `
@@ -12215,11 +12413,20 @@ async function loadAdminFolderContents(parentFolderId) {
       });
 
     // ── Load files in this folder ──
-    const filesSnap = await db.collection('materials')
-      .where('classId', '==', classId)
-      .where('folderId', '==', parentFolderId || 'root')
-      .orderBy('createdAt', 'desc')
-      .get();
+    let filesSnap;
+    try {
+      filesSnap = await db.collection('materials')
+        .where('classId', '==', classId)
+        .where('folderId', '==', parentFolderId || 'root')
+        .orderBy('createdAt', 'desc')
+        .get();
+    } catch(indexErr) {
+      // Fallback: no orderBy
+      filesSnap = await db.collection('materials')
+        .where('classId', '==', classId)
+        .where('folderId', '==', parentFolderId || 'root')
+        .get();
+    }
 
     let html = '';
 
@@ -12700,6 +12907,20 @@ function uploadToCloudinary(file, title) {
 
     const classId  = AdminFolderState.currentClassId  || 'general';
     const folderId = AdminFolderState.currentFolderId || 'root';
+
+    // Select correct Cloudinary endpoint based on file type
+    // Audio → /video/upload (Cloudinary's requirement for mp3, wav, etc.)
+    // Image → /image/upload
+    // PDF / DOC / others → /raw/upload
+    let uploadUrl;
+    if (file.type.startsWith('audio/') || file.type.startsWith('video/')) {
+      uploadUrl = CLOUDINARY_UPLOAD_URL_VIDEO;
+    } else if (file.type.startsWith('image/')) {
+      uploadUrl = CLOUDINARY_UPLOAD_URL_IMAGE;
+    } else {
+      uploadUrl = CLOUDINARY_UPLOAD_URL_RAW; // PDF, DOC, etc.
+    }
+
     const fd = new FormData();
     fd.append('file',          file);
     fd.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
@@ -12721,7 +12942,7 @@ function uploadToCloudinary(file, title) {
       } else reject(new Error('Upload failed: '+xhr.status));
     });
     xhr.addEventListener('error', () => { progressWrap.style.display='none'; reject(new Error('Network error')); });
-    xhr.open('POST', CLOUDINARY_UPLOAD_URL);
+    xhr.open('POST', uploadUrl);
     xhr.send(fd);
   });
 }
@@ -13131,12 +13352,435 @@ console.log('🎉 ALL PARTS LOADED — BCI Website is ready!');
 console.log('📋 Next step: Add your Firebase config keys (Part 1)');
 console.log('🌐 Then deploy to Netlify for free hosting');
 
+// Pre-initialize PDF.js worker at app load — saves ~50ms on first PDF open
+if (window.pdfjsLib) {
+  pdfjsLib.GlobalWorkerOptions.workerSrc =
+    'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+}
+
 </script>
 
 <!-- =====================================================
      GLOBAL MODALS — at root level, work on ALL pages
      (registration, login, admin, student dashboard)
      ===================================================== -->
+
+<!-- Modal: Audio Player (Global) -->
+<div id="modal-audio-player" style="
+  display:none; position:fixed; inset:0; z-index:11000;
+  background:rgba(0,0,0,0.92);
+  flex-direction:column; align-items:center; justify-content:center;
+  padding:16px;
+">
+  <div style="
+    width:100%; max-width:420px;
+    background:var(--bg-card,#1a1a2e);
+    border:1px solid var(--border,#2a2a4a);
+    border-radius:16px; overflow:hidden;
+    box-shadow:0 8px 40px rgba(0,0,0,0.6);
+  ">
+    <!-- Top bar -->
+    <div style="
+      display:flex; align-items:center; justify-content:space-between;
+      padding:12px 14px; border-bottom:1px solid var(--border,#2a2a4a);
+      background:var(--bg-card2,#252540);
+    ">
+      <div style="display:flex; align-items:center; gap:8px;">
+        <span style="font-size:16px;">🎵</span>
+        <span style="font-size:12px; font-weight:600; color:var(--text-dim,#aaa);">Now Playing</span>
+      </div>
+      <div style="display:flex; gap:8px;">
+        <button onclick="audioMinimize()" title="Minimize"
+          style="background:none; border:1px solid var(--border,#2a2a4a); color:var(--text-dim,#aaa);
+          font-size:13px; cursor:pointer; padding:4px 10px; border-radius:6px;
+          font-weight:700; letter-spacing:1px;">—</button>
+        <!-- DOWNLOAD BUTTON — currently DISABLED
+             To enable: remove display:none from style AND set AUDIO_DOWNLOAD_ENABLED = true in JS -->
+        <button id="audio-download-btn" onclick="audioDownload()"
+          disabled
+          style="display:none; background:none; border:none; color:var(--neon-blue,#00d4ff);
+          font-size:18px; cursor:not-allowed; padding:4px 6px; border-radius:6px;
+          opacity:0.4; transition:opacity 0.2s;">⬇️</button>
+        <button onclick="closeAudioPlayer()"
+          style="background:#ff4466; border:none; color:#fff;
+          font-size:13px; font-weight:700; cursor:pointer;
+          padding:4px 12px; border-radius:6px;">✕</button>
+      </div>
+    </div>
+
+    <!-- Center area — icon + title -->
+    <div style="padding:20px 20px 16px; text-align:center;">
+      <!-- Icon: outer glow ring + inner circle perfectly centered -->
+      <div style="position:relative; width:90px; height:90px; margin:0 auto 14px;">
+        <!-- Pulse ring (glow inside circle only) -->
+        <div id="audio-pulse-ring" style="
+          position:absolute; inset:0; border-radius:50%;
+          background:transparent;
+        "></div>
+        <!-- Icon circle -->
+        <div id="audio-icon-wrap" style="
+          position:absolute; inset:0; border-radius:50%;
+          background:linear-gradient(135deg,rgba(0,212,255,0.18),rgba(139,92,246,0.18));
+          border:2px solid rgba(0,212,255,0.35);
+          display:flex; align-items:center; justify-content:center;
+        ">
+          <span style="font-size:34px; line-height:1; display:block;">🎵</span>
+        </div>
+      </div>
+
+      <!-- Title -->
+      <div id="audio-player-title" style="
+        font-size:15px; font-weight:700; color:var(--text-white,#fff);
+        margin-bottom:3px;
+        white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+      ">Audio</div>
+      <div id="audio-player-subtitle" style="
+        font-size:11px; color:var(--text-dim,#aaa);
+      ">BCI Audio Lecture</div>
+    </div>
+
+    <!-- Progress bar -->
+    <div style="padding:0 20px 12px;">
+      <!-- Time labels: current | remaining -->
+      <div style="display:flex; justify-content:space-between; margin-bottom:6px;">
+        <span id="audio-current-time" style="font-size:12px; color:var(--neon-blue,#00d4ff); font-weight:600; min-width:36px;">0:00</span>
+        <span id="audio-remain-time" style="font-size:12px; color:var(--text-dim,#aaa); min-width:46px; text-align:right;">-0:00</span>
+      </div>
+      <!-- Seekbar -->
+      <div id="audio-seekbar-wrap" style="
+        height:44px; display:flex; align-items:center; cursor:pointer;
+        position:relative; touch-action:none;
+      ">
+        <div id="audio-seekbar-track" style="
+          width:100%; height:5px; background:rgba(255,255,255,0.12);
+          border-radius:3px; position:relative; overflow:visible;
+        ">
+          <div id="audio-seekbar-fill" style="
+            height:100%; width:0%; background:var(--neon-blue,#00d4ff);
+            border-radius:3px; position:relative;
+            transition:width 0.08s linear;
+          ">
+            <div id="audio-seekbar-thumb" style="
+              position:absolute; right:-8px; top:50%; transform:translateY(-50%);
+              width:16px; height:16px; border-radius:50%;
+              background:var(--neon-blue,#00d4ff);
+              box-shadow:0 0 8px rgba(0,212,255,0.7);
+              transition:transform 0.1s ease;
+            "></div>
+          </div>
+        </div>
+        <div id="audio-drag-preview" style="
+          display:none; position:absolute; top:-28px;
+          background:var(--neon-blue,#00d4ff); color:#000;
+          font-size:11px; font-weight:700; padding:2px 7px;
+          border-radius:4px; pointer-events:none; transform:translateX(-50%);
+        ">0:00</div>
+      </div>
+    </div>
+
+    <!-- Main controls -->
+    <div style="display:flex; align-items:center; justify-content:center; gap:14px; padding:0 20px 16px;">
+      <!-- 5s back -->
+      <button onclick="audioSkip(-5)" style="
+        background:var(--bg-card2,#252540); border:1px solid var(--border,#2a2a4a);
+        color:var(--text-white,#fff); border-radius:50%; width:48px; height:48px;
+        cursor:pointer; display:flex; align-items:center; justify-content:center;
+        flex-direction:column; gap:1px;
+        transition:transform 0.12s ease, background 0.12s ease;
+        -webkit-tap-highlight-color:transparent;"
+        onpointerdown="this.style.transform='scale(0.82)'; this.style.background='rgba(0,212,255,0.18)'"
+        onpointerup="this.style.transform='scale(1)'; this.style.background='var(--bg-card2,#252540)'"
+        onpointerleave="this.style.transform='scale(1)'; this.style.background='var(--bg-card2,#252540)'">
+        <span style="font-size:15px; line-height:1;">⏮</span>
+        <span style="font-size:9px; color:var(--text-dim,#aaa);">5s</span>
+      </button>
+      <!-- Play/Pause -->
+      <button id="audio-play-btn" onclick="audioTogglePlay()" style="
+        background:var(--neon-blue,#00d4ff); border:none; color:#000;
+        border-radius:50%; width:64px; height:64px; font-size:24px;
+        cursor:pointer; font-weight:700;
+        display:flex; align-items:center; justify-content:center;
+        box-shadow:0 4px 16px rgba(0,212,255,0.4);">▶</button>
+      <!-- 5s forward -->
+      <button onclick="audioSkip(5)" style="
+        background:var(--bg-card2,#252540); border:1px solid var(--border,#2a2a4a);
+        color:var(--text-white,#fff); border-radius:50%; width:48px; height:48px;
+        cursor:pointer; display:flex; align-items:center; justify-content:center;
+        flex-direction:column; gap:1px;
+        transition:transform 0.12s ease, background 0.12s ease;
+        -webkit-tap-highlight-color:transparent;"
+        onpointerdown="this.style.transform='scale(0.82)'; this.style.background='rgba(0,212,255,0.18)'"
+        onpointerup="this.style.transform='scale(1)'; this.style.background='var(--bg-card2,#252540)'"
+        onpointerleave="this.style.transform='scale(1)'; this.style.background='var(--bg-card2,#252540)'">
+        <span style="font-size:15px; line-height:1;">⏭</span>
+        <span style="font-size:9px; color:var(--text-dim,#aaa);">5s</span>
+      </button>
+    </div>
+
+    <!-- Speed + Volume row -->
+    <div style="padding:0 20px 18px; display:flex; flex-direction:column; gap:12px;">
+
+      <!-- Volume + Speed toggle on same row -->
+      <div style="display:flex; align-items:center; gap:10px;">
+        <span style="font-size:15px; flex-shrink:0;">🔊</span>
+        <input type="range" id="audio-volume" min="0" max="100" value="100"
+          oninput="audioSetVolume(this.value)"
+          style="flex:1; height:4px; accent-color:var(--neon-blue,#00d4ff); cursor:pointer;">
+        <span id="audio-vol-label" style="display:none;">100%</span>
+        <!-- Single speed toggle button — cycles through speeds on tap -->
+        <button id="audio-speed-btn" onclick="audioCycleSpeed()"
+          style="background:var(--bg-card2,#252540); border:1px solid var(--neon-blue,#00d4ff);
+          color:var(--neon-blue,#00d4ff); border-radius:6px; padding:5px 9px;
+          font-size:11px; font-weight:700; cursor:pointer;
+          flex-shrink:0; min-width:40px; text-align:center;">1x</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Hidden audio element -->
+  <audio id="bci-audio-el" preload="metadata" style="display:none;"></audio>
+</div>
+
+<!-- ── Mini Audio Player (edge panel) ──────────────────────── -->
+<!-- Arrow tab — proper handle button, screen edge attached -->
+<button id="audio-mini-tab" onclick="audioToggleMini()" style="
+  display:none; position:fixed; right:0; top:50%;
+  transform:translateY(-50%);
+  z-index:10005;
+  background:rgba(12,12,28,0.97);
+  border:1px solid rgba(0,212,255,0.25);
+  border-right:none;
+  border-radius:10px 0 0 10px;
+  width:28px; height:72px;
+  padding:0; cursor:pointer;
+  box-shadow:-3px 0 14px rgba(0,0,0,0.5);
+  -webkit-tap-highlight-color:transparent;
+  flex-direction:column;
+  align-items:center; justify-content:center; gap:6px;
+  transition:transform 0.1s ease, background 0.1s ease;
+"
+onpointerdown="this.style.transform='translateY(-50%) scale(0.92)'; this.style.background='rgba(0,212,255,0.15)'"
+onpointerup="this.style.transform='translateY(-50%) scale(1)'; this.style.background='rgba(12,12,28,0.97)'"
+onpointerleave="this.style.transform='translateY(-50%) scale(1)'; this.style.background='rgba(12,12,28,0.97)'">
+  <span id="audio-mini-arrow" style="
+    font-size:16px; color:var(--neon-blue,#00d4ff); font-weight:900;
+    transition:transform 0.25s ease; display:block;
+  ">◀</span>
+</button>
+
+
+<!-- Mini panel — slides from right -->
+<!-- Mini panel — slides from right -->
+<div id="audio-mini-panel" style="
+  display:none; position:fixed; z-index:10004;
+  top:50%; right:54px;
+  transform:translateY(-50%) translateX(calc(100% + 54px));
+  transition:transform 0.25s ease-in-out;
+  width:min(58vw, 240px);
+">
+  <div style="
+    background:rgba(12,12,28,0.97);
+    border:1px solid rgba(0,212,255,0.25);
+    border-radius:12px;
+    padding:10px 12px;
+    box-shadow:-4px 0 20px rgba(0,0,0,0.6);
+    display:flex; flex-direction:column; gap:8px;
+  ">
+    <!-- Title row -->
+    <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+      <div style="display:flex; align-items:center; gap:6px; min-width:0; flex:1;">
+        <span style="font-size:13px; flex-shrink:0;">🎵</span>
+        <span id="audio-mini-title" style="
+          font-size:12px; font-weight:600; color:#fff;
+          white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+          max-width:120px; display:block;
+        ">Audio</span>
+      </div>
+      <button onclick="audioExpandFull()" title="Open full player"
+        style="background:rgba(0,212,255,0.12); border:1.5px solid var(--neon-blue,#00d4ff);
+        color:var(--neon-blue,#00d4ff);
+        font-size:15px; font-weight:700; cursor:pointer;
+        padding:0; flex-shrink:0;
+        width:36px; height:36px; border-radius:8px;
+        display:flex; align-items:center; justify-content:center;
+        box-shadow:0 0 8px rgba(0,212,255,0.25);
+        transition:background 0.15s, transform 0.1s;"
+        onpointerdown="this.style.background='rgba(0,212,255,0.30)'; this.style.transform='scale(0.9)'"
+        onpointerup="this.style.background='rgba(0,212,255,0.12)'; this.style.transform='scale(1)'"
+        onpointerleave="this.style.background='rgba(0,212,255,0.12)'; this.style.transform='scale(1)'"><span style="line-height:1; display:block; margin-top:-2px;">⬆</span></button>
+    </div>
+    <!-- Controls -->
+    <div style="display:flex; align-items:center; justify-content:center; gap:10px;">
+      <!-- 5s back with tap animation -->
+      <button onclick="audioSkip(-5)"
+        style="background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.12);
+        color:#fff; border-radius:50%; width:44px; height:44px; cursor:pointer;
+        display:flex; align-items:center; justify-content:center; flex-direction:column; gap:0;
+        transition:transform 0.1s ease, background 0.1s ease;
+        -webkit-tap-highlight-color:transparent;"
+        onpointerdown="this.style.transform='scale(0.88)'; this.style.background='rgba(255,255,255,0.18)'"
+        onpointerup="this.style.transform='scale(1)'; this.style.background='rgba(255,255,255,0.08)'"
+        onpointerleave="this.style.transform='scale(1)'; this.style.background='rgba(255,255,255,0.08)'">
+        <span style="font-size:14px; line-height:1;">⏮</span>
+        <span style="font-size:8px; color:#aaa;">5s</span>
+      </button>
+      <!-- Play/Pause with tap animation -->
+      <button id="audio-mini-play-btn" onclick="audioTogglePlay()"
+        style="background:var(--neon-blue,#00d4ff); border:none; color:#000;
+        border-radius:50%; width:52px; height:52px; font-size:22px; cursor:pointer;
+        font-weight:700; display:flex; align-items:center; justify-content:center;
+        box-shadow:0 2px 10px rgba(0,212,255,0.4);
+        transition:transform 0.1s ease, background 0.1s ease;
+        -webkit-tap-highlight-color:transparent;"
+        onpointerdown="this.style.transform='scale(0.9)'; this.style.background='rgba(0,180,220,0.9)'"
+        onpointerup="this.style.transform='scale(1)'; this.style.background='var(--neon-blue,#00d4ff)'"
+        onpointerleave="this.style.transform='scale(1)'; this.style.background='var(--neon-blue,#00d4ff)'">▶</button>
+      <!-- 5s forward with tap animation -->
+      <button onclick="audioSkip(5)"
+        style="background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.12);
+        color:#fff; border-radius:50%; width:44px; height:44px; cursor:pointer;
+        display:flex; align-items:center; justify-content:center; flex-direction:column; gap:0;
+        transition:transform 0.1s ease, background 0.1s ease;
+        -webkit-tap-highlight-color:transparent;"
+        onpointerdown="this.style.transform='scale(0.88)'; this.style.background='rgba(255,255,255,0.18)'"
+        onpointerup="this.style.transform='scale(1)'; this.style.background='rgba(255,255,255,0.08)'"
+        onpointerleave="this.style.transform='scale(1)'; this.style.background='rgba(255,255,255,0.08)'">
+        <span style="font-size:14px; line-height:1;">⏭</span>
+        <span style="font-size:8px; color:#aaa;">5s</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: PDF Viewer (Global — works for both student & admin) -->
+<div id="modal-pdf-viewer" style="
+  display:none; position:fixed; inset:0; z-index:9999;
+  background:rgba(0,0,0,0.92);
+  flex-direction:column; align-items:stretch; justify-content:flex-start;
+  overflow:visible;
+">
+  <!-- Top Bar -->
+  <div style="
+    width:100%;
+    display:flex; align-items:center; justify-content:space-between;
+    padding:8px 12px; gap:8px;
+    background:var(--bg-card,#1a1a2e); border-bottom:1px solid var(--border,#333);
+    flex-shrink:0; box-sizing:border-box;
+  ">
+    <!-- Title -->
+    <div id="pdf-viewer-title" style="
+      font-size:13px; font-weight:600; color:var(--text-white,#fff);
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis; flex:1; min-width:0;
+    ">PDF</div>
+
+    <!-- Page indicator — clickable, opens page selector -->
+    <button onclick="pdfOpenPageSelector()" id="pdf-page-info"
+      style="background:var(--bg-card2,#252540); border:1px solid var(--border,#333);
+      color:var(--text-white,#fff); border-radius:6px; padding:5px 10px;
+      font-size:12px; cursor:pointer; white-space:nowrap; flex-shrink:0;">— / —</button>
+
+    <!-- Right buttons -->
+    <div style="display:flex; align-items:center; gap:5px; flex-shrink:0;">
+      <button onclick="pdfZoomOut()" title="Zoom Out"
+        style="background:var(--bg-card2,#252540); border:1px solid var(--border,#333);
+        color:var(--text-white,#fff); border-radius:6px; padding:5px 9px;
+        font-size:15px; cursor:pointer; line-height:1;">−</button>
+      <span id="pdf-zoom-ind" style="font-size:11px; color:var(--text-dim,#aaa);
+        white-space:nowrap; min-width:30px; text-align:center;">100%</span>
+      <button onclick="pdfZoomIn()" title="Zoom In"
+        style="background:var(--bg-card2,#252540); border:1px solid var(--border,#333);
+        color:var(--text-white,#fff); border-radius:6px; padding:5px 9px;
+        font-size:15px; cursor:pointer; line-height:1;">+</button>
+      <button onclick="pdfDownload()" title="Download"
+        style="background:var(--bg-card2,#252540); border:1px solid var(--border,#333);
+        color:var(--neon-blue,#00d4ff); border-radius:6px; padding:5px 9px;
+        font-size:13px; cursor:pointer;">⬇️</button>
+      <button onclick="closePdfViewer()"
+        style="background:#ff4466; border:none; color:#fff;
+        border-radius:6px; padding:5px 10px; font-size:13px; cursor:pointer; font-weight:700;">✕</button>
+    </div>
+  </div>
+
+  <!-- Loading State -->
+  <div id="pdf-loading" style="
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:14px; color:var(--text-dim,#aaa); padding:60px 20px; flex:1;
+  ">
+    <div style="width:36px;height:36px;border:3px solid var(--border,#333);
+      border-top-color:var(--neon-blue,#00d4ff);border-radius:50%;
+      animation:spin 0.8s linear infinite;"></div>
+    <div style="font-size:14px;">Loading PDF...</div>
+  </div>
+
+  <!-- Error State -->
+  <div id="pdf-error" style="
+    display:none; flex-direction:column; align-items:center; justify-content:center;
+    gap:14px; color:#ff4466; padding:60px 20px; flex:1; text-align:center;
+  ">
+    <div style="font-size:32px;">⚠️</div>
+    <div style="font-size:15px; font-weight:600;">Could not load PDF</div>
+    <div id="pdf-error-msg" style="font-size:13px; color:var(--text-dim,#aaa); max-width:280px;"></div>
+    <button onclick="pdfDownload()"
+      style="margin-top:8px; background:var(--neon-blue,#00d4ff); color:#000;
+      border:none; border-radius:8px; padding:10px 20px; font-size:13px;
+      font-weight:700; cursor:pointer;">⬇️ Download Instead</button>
+  </div>
+
+  <!-- Canvas Container -->
+  <div id="pdf-canvas-wrap" style="
+    display:none; overflow:auto;
+    width:100%; flex:1;
+    -webkit-overflow-scrolling:touch;
+  ">
+    <canvas id="pdf-canvas" style="
+      display:block;
+      margin: 0 auto;
+      image-rendering: auto;
+      box-shadow:0 4px 32px rgba(0,0,0,0.6);
+      border-radius:4px; background:#fff;
+    "></canvas>
+  </div>
+
+  <!-- Bottom floating nav arrows — position:fixed so always visible on screen -->
+  <div id="pdf-bottom-nav" style="display:none;">
+    <button onclick="pdfPrevPage()" id="pdf-btn-prev"
+      style="position:fixed; bottom:20px; left:12px; z-index:10001;
+      background:rgba(20,20,50,0.9); border:1px solid rgba(255,255,255,0.2);
+      color:#fff; border-radius:50%; width:48px; height:48px;
+      font-size:22px; cursor:pointer; display:flex; align-items:center;
+      justify-content:center; box-shadow:0 2px 16px rgba(0,0,0,0.6);">‹</button>
+    <button onclick="pdfNextPage()" id="pdf-btn-next"
+      style="position:fixed; bottom:20px; right:12px; z-index:10001;
+      background:rgba(20,20,50,0.9); border:1px solid rgba(255,255,255,0.2);
+      color:#fff; border-radius:50%; width:48px; height:48px;
+      font-size:22px; cursor:pointer; display:flex; align-items:center;
+      justify-content:center; box-shadow:0 2px 16px rgba(0,0,0,0.6);">›</button>
+  </div>
+
+  <!-- Page selector modal -->
+  <div id="pdf-page-selector" style="
+    display:none; position:fixed; inset:0; z-index:10002;
+    background:rgba(0,0,0,0.7);
+    align-items:center; justify-content:center;
+  ">
+    <div style="
+      background:var(--bg-card,#1a1a2e); border:1px solid var(--border,#333);
+      border-radius:12px; padding:16px; width:280px; max-width:90vw;
+    ">
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
+        <span style="font-size:14px; font-weight:700; color:var(--text-white,#fff);">Go to Page</span>
+        <button onclick="pdfClosePageSelector()"
+          style="background:none; border:none; color:var(--text-dim,#aaa);
+          font-size:18px; cursor:pointer; padding:0 4px;">✕</button>
+      </div>
+      <!-- Page grid — populated by JS -->
+      <div id="pdf-page-grid" style="
+        display:grid; grid-template-columns:repeat(5,1fr); gap:6px;
+        max-height:260px; overflow-y:auto;
+      "></div>
+    </div>
+  </div>
+</div>
 
 <!-- Modal: Registration Confirmation -->
 <div class="modal-overlay" id="modal-reg-confirm">
@@ -13159,15 +13803,15 @@ console.log('🌐 Then deploy to Netlify for free hosting');
          style="display:grid; grid-template-columns:1fr 1fr; gap:8px;
                 margin-bottom:20px; font-size:var(--fs-sm);">
     </div>
-    <div class="modal-footer" style="gap:12px;">
-      <button class="btn btn-ghost" style="flex:1;"
-              onclick="closeModal('modal-reg-confirm')">
-        ✏️ Edit / वापस जाएं
-      </button>
-      <button class="btn btn-primary" style="flex:1;"
+    <div class="modal-footer" style="flex-direction:column; gap:10px;">
+      <button class="btn btn-primary" style="width:100%;"
               id="reg-confirm-submit-btn"
               onclick="submitRegistrationConfirmed()">
         ✅ Submit / जमा करें
+      </button>
+      <button class="btn btn-ghost" style="width:100%;"
+              onclick="closeModal('modal-reg-confirm')">
+        ✏️ Edit / वापस जाएं
       </button>
     </div>
   </div>
@@ -16261,50 +16905,1627 @@ function isAudioVideoImage(url, type) {
          u.match(/\.(mp3|mp4|wav|ogg|m4a|aac|webm|jpg|jpeg|png|gif|webp)(\?|$)/);
 }
 
+function isAudioFile(url, type) {
+  if (!url) return false;
+  if ((type||'').toLowerCase() === 'audio') return true;
+  const u = url.toLowerCase();
+  return u.match(/\.(mp3|wav|ogg|m4a|aac)(\?|$)/);
+}
+
 function openMaterial(url, title, type) {
   if (!url) return;
 
   // ── Case 1: Google Drive link ─────────────────────────────
-  // Extract file ID → open via /preview (renders inline, no download)
   if (url.includes('drive.google.com')) {
     let fileId = null;
-
-    // Format: /file/d/FILE_ID/
     const matchPath = url.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
     if (matchPath) fileId = matchPath[1];
-
-    // Format: ?id=FILE_ID or &id=FILE_ID
     if (!fileId) {
       const matchParam = url.match(/[?&]id=([a-zA-Z0-9_-]+)/);
       if (matchParam) fileId = matchParam[1];
     }
-
     if (fileId) {
-      // /preview opens file inline in browser — no download, no app needed
-      const previewUrl = 'https://drive.google.com/file/d/' + fileId + '/preview';
-      window.open(previewUrl, '_blank', 'noopener,noreferrer');
+      window.open('https://drive.google.com/file/d/' + fileId + '/preview', '_blank', 'noopener,noreferrer');
       return;
     }
-    // File ID extraction failed — wrap in Google Docs Viewer
-    const viewerUrl = 'https://docs.google.com/viewer?embedded=true&url=' + encodeURIComponent(url);
-    window.open(viewerUrl, '_blank', 'noopener,noreferrer');
+    window.open(url, '_blank', 'noopener,noreferrer');
     return;
   }
 
-  // ── Case 2: Audio / Video / Image / YouTube → open directly ──
-  // These don't need a viewer — browser handles them natively
+  // ── Case 2: Audio → custom in-app player ─────────────────
+  if (isAudioFile(url, type)) {
+    openAudioPlayer(url, title || 'Audio Lecture');
+    return;
+  }
+
+  // ── Case 3: Image / Video / YouTube → open directly ──────
   if (isAudioVideoImage(url, type)) {
     window.open(url, '_blank', 'noopener,noreferrer');
     return;
   }
 
-  // ── Case 3: Cloudinary + all other document URLs ──────────
-  // Google Docs Viewer prevents download prompt on Android.
-  // Works for Cloudinary PDFs, any other PDF/document URL.
-  const viewerUrl = 'https://docs.google.com/viewer?embedded=true&url=' + encodeURIComponent(url);
-  window.open(viewerUrl, '_blank', 'noopener,noreferrer');
+  // ── Case 4: PDF / other document → PDF.js viewer ─────────
+  openPdfViewer(url, title || 'Document');
 }
 
+// =============================================================
+// PDF.js IN-APP VIEWER
+// =============================================================
+let _pdfDoc       = null;
+let _pdfPage      = 1;
+let _pdfUrl       = '';
+let _pdfRendering = false;
+let _pdfResizeTimer = null;
+
+// ── Zoom & Pan State ─────────────────────────────────────────
+let _pdfZoom      = 1;
+const _PDF_ZOOM_MIN = 0.5;
+const _PDF_ZOOM_MAX = 4;
+let _pdfPanX      = 0;
+let _pdfPanY      = 0;
+let _pdfIsPinching = false;
+let _pdfPinchStartDist = 0;
+
+// ── Zoom Quality (Hybrid approach) ───────────────────────────
+let _pdfLastRenderedZoom = 1;   // zoom level at which canvas was last rendered
+let _pdfZoomRenderTimer  = null; // debounce timer for re-render after zoom settles
+const _PDF_MAX_RENDER_SCALE = 5; // safe cap — prevents memory issues on low-end devices
+// Base canvas CSS size (set at render time)
+let _pdfBaseW = 0;
+let _pdfBaseH = 0;
+// Focal point for zoom (0-1 ratio of canvas)
+let _pdfFocalX = 0.5;
+let _pdfFocalY = 0.0;
+let _pdfPinchStartZoom = 1;
+let _pdfIsDragging = false;
+let _pdfDragStartX = 0;
+let _pdfDragStartY = 0;
+let _pdfLastTap    = 0;
+let _pdfPinchCenterX  = 0;   // pinch midpoint X relative to wrap
+let _pdfPinchCenterY  = 0;   // pinch midpoint Y relative to wrap
+let _pdfPinchStartPanX = 0;  // pan at pinch start
+let _pdfPinchStartPanY = 0;
+
+// Re-render on orientation change / window resize
+window.addEventListener('resize', function() {
+  if (!_pdfDoc) return;
+  clearTimeout(_pdfResizeTimer);
+  _pdfResizeTimer = setTimeout(function() {
+    _pdfZoom = 1; _pdfPanX = 0; _pdfPanY = 0;
+    _pdfApplyTransform();
+    _pdfRendering = false;
+    _pdfRenderPage(_pdfPage);
+  }, 300);
+});
+
+// Page Visibility API — re-render when tab becomes visible again
+// Handles: phone lock/unlock, tab switch, browser suspend/resume
+// Canvas gets cleared by browser during suspend → re-render on resume
+document.addEventListener('visibilitychange', function() {
+  // Pause audio when user leaves tab/app — manual resume only
+  if (document.hidden) {
+    const audio = document.getElementById('bci-audio-el');
+    if (audio && !audio.paused) audio.pause();
+    return;
+  }
+  // Tab visible again — PDF canvas re-render check
+  if (!_pdfDoc) return;
+
+  // Tab is visible again — check if canvas needs re-render
+  const canvas = document.getElementById('pdf-canvas');
+  if (!canvas) return;
+
+  // Check if canvas is blank — try/catch for security errors
+  let isBlank = false;
+  try {
+    const ctx   = canvas.getContext('2d');
+    const pixel = ctx.getImageData(0, 0, 1, 1).data;
+    isBlank = pixel[3] === 0;
+  } catch(e) {
+    isBlank = true; // assume blank if check fails — safe to re-render
+  }
+
+  if (isBlank) {
+    _pdfRendering = false;
+    _pdfRenderPage(_pdfPage);
+  }
+});
+
+// =============================================================
+// PDF RESUME — Last Viewed Page (localStorage)
+// =============================================================
+const _PDF_RESUME_EXPIRY_DAYS = 7;
+const _PDF_RESUME_MAX_ENTRIES = 20;
+const _PDF_RESUME_PREFIX      = 'bci_pdf_';
+
+// Extract unique ID from Cloudinary URL
+// Uses version + filename → changes if admin reuploads
+// Get current logged-in student ID for per-student cache isolation
+// Returns student doc ID (e.g. 2627-BSEB-10-001) or 'guest' if not logged in
+function _getStudentCacheId() {
+  try {
+    const id = window.AppState && AppState.currentUser && AppState.currentUser.id;
+    return id ? String(id).replace(/[^a-zA-Z0-9_-]/g, '_') : 'guest';
+  } catch(e) { return 'guest'; }
+}
+
+function _pdfGetId(url) {
+  try {
+    // Extract version (v1234567) and filename from Cloudinary URL
+    const vMatch = url.match(/\/(v\d+)\//);
+    const fMatch = url.match(/\/([^\/]+\.pdf)/i);
+    const version  = vMatch ? vMatch[1] : '';
+    const filename = fMatch ? fMatch[1] : url.slice(-20);
+    const fileKey  = (version + '_' + filename).replace(/[^a-zA-Z0-9_]/g, '_');
+    // Include student ID — prevents cross-student cache pollution on shared browser
+    return _getStudentCacheId() + '_' + fileKey;
+  } catch(e) { return null; }
+}
+
+// Save last viewed page (debounced — called on page change)
+function _pdfResumeSave(url, page) {
+  try {
+    const id = _pdfGetId(url);
+    if (!id) return;
+    const data = JSON.stringify({ page: page, savedAt: Date.now() });
+    localStorage.setItem(_PDF_RESUME_PREFIX + id, data);
+    _pdfResumeCleanup(); // keep storage clean
+  } catch(e) { /* silent — incognito or storage full */ }
+}
+
+// Load saved page — returns page number or 1 (fallback)
+function _pdfResumeLoad(url, totalPages) {
+  try {
+    const id = _pdfGetId(url);
+    if (!id) return 1;
+    const raw = localStorage.getItem(_PDF_RESUME_PREFIX + id);
+    if (!raw) return 1;
+    const data = JSON.parse(raw);
+    // Check expiry (7 days)
+    const ageMs  = Date.now() - (data.savedAt || 0);
+    const ageDays = ageMs / (1000 * 60 * 60 * 24);
+    if (ageDays > _PDF_RESUME_EXPIRY_DAYS) {
+      localStorage.removeItem(_PDF_RESUME_PREFIX + id); // expired → delete
+      return 1;
+    }
+    // Validate page number against current PDF
+    const page = parseInt(data.page, 10);
+    if (!page || page < 1 || page > totalPages) return 1; // invalid → fresh start
+    return page;
+  } catch(e) { return 1; /* any error → fresh start, no crash */ }
+}
+
+// Auto cleanup — remove expired + keep max 20 entries
+function _pdfResumeCleanup() {
+  try {
+    const now      = Date.now();
+    const expiryMs = _PDF_RESUME_EXPIRY_DAYS * 24 * 60 * 60 * 1000;
+    const entries  = [];
+
+    // Collect all bci_pdf_ entries
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key || !key.startsWith(_PDF_RESUME_PREFIX)) continue;
+      try {
+        const data = JSON.parse(localStorage.getItem(key));
+        if (now - (data.savedAt || 0) > expiryMs) {
+          localStorage.removeItem(key); // expired → delete immediately
+        } else {
+          entries.push({ key, savedAt: data.savedAt || 0 });
+        }
+      } catch(e) { localStorage.removeItem(key); } // corrupt → delete
+    }
+
+    // If still over max limit → delete oldest first
+    if (entries.length > _PDF_RESUME_MAX_ENTRIES) {
+      entries.sort(function(a,b) { return a.savedAt - b.savedAt; }); // oldest first
+      const toDelete = entries.slice(0, entries.length - _PDF_RESUME_MAX_ENTRIES);
+      toDelete.forEach(function(e) { localStorage.removeItem(e.key); });
+    }
+  } catch(e) { /* silent */ }
+}
+
+function openPdfViewer(url, title) {
+  _pdfUrl  = url;
+  _pdfPage = 1;
+  _pdfDoc  = null;
+  _pdfRendering = false;
+
+  // Show modal
+  const modal = document.getElementById('modal-pdf-viewer');
+  if (!modal) {
+    console.error('[PDF Viewer] Modal element not found in DOM');
+    window.open(url, '_blank', 'noopener,noreferrer');
+    return;
+  }
+  modal.style.display = 'flex';
+
+  // Push history state so Android back button closes viewer instead of navigating
+  history.pushState({ pdfViewer: true }, '', location.href);
+  document.body.style.overflow = 'hidden';
+
+  // Set title
+  document.getElementById('pdf-viewer-title').textContent = title || 'Document';
+
+  // Show loading, hide others
+  _pdfSetState('loading');
+
+  if (!window.pdfjsLib) {
+    _pdfSetState('error', 'PDF viewer not loaded. Please refresh and try again.');
+    return;
+  }
+
+  // Streaming approach — PDF.js loads only what's needed per page
+  // rangeChunkSize: 256KB chunks — fewer round trips, faster for small+medium files
+  // disableStream: false — enables progressive loading
+  // disableAutoFetch: true — disable background prefetch (reduces unnecessary requests)
+  // getDocument() called ONCE per file open (friend's rule ✅)
+  // URL never opened directly in browser — PDF.js handles internally (no download popup ✅)
+  pdfjsLib.getDocument({
+    url: url,
+    rangeChunkSize: 262144,
+    disableStream: false,
+    disableAutoFetch: true,  // faster initial load — pages fetched on demand only
+    withCredentials: false
+  }).promise
+    .then(function(pdf) {
+      _pdfDoc = pdf;
+
+      // Resume last viewed page (safe — fallback to 1 on any issue)
+      const resumePage = _pdfResumeLoad(url, pdf.numPages);
+      _pdfPage = resumePage;
+
+      _pdfUpdatePageUI();
+      _pdfSetState('canvas');
+      _pdfInitTouchHandlers();
+      requestAnimationFrame(function() {
+        requestAnimationFrame(function() {
+          _pdfResetZoom();
+          _pdfRenderPage(_pdfPage);
+        });
+      });
+    })
+    .catch(function(err) {
+      console.error('[PDF Viewer] Error:', err);
+      _pdfSetState('error', 'Failed to load file. Try downloading it instead.');
+    });
+}
+
+function _pdfSetState(state, msg) {
+  document.getElementById('pdf-loading').style.display     = state === 'loading' ? 'flex' : 'none';
+  document.getElementById('pdf-error').style.display       = state === 'error'   ? 'flex' : 'none';
+  document.getElementById('pdf-canvas-wrap').style.display = state === 'canvas'  ? 'flex' : 'none';
+  // Show/hide bottom nav arrows with canvas
+  const nav = document.getElementById('pdf-bottom-nav');
+  if (nav) nav.style.display = state === 'canvas' ? 'block' : 'none';
+  if (state === 'error' && msg) {
+    document.getElementById('pdf-error-msg').textContent = msg;
+  }
+}
+
+// ── Central page update — keeps all UI in sync ───────────────
+function _pdfUpdatePageUI() {
+  if (!_pdfDoc) return;
+  const info = document.getElementById('pdf-page-info');
+  if (info) info.textContent = 'Page ' + _pdfPage + ' / ' + _pdfDoc.numPages;
+  // Dim prev/next arrows at boundaries
+  const prev = document.getElementById('pdf-btn-prev');
+  const next = document.getElementById('pdf-btn-next');
+  if (prev) prev.style.opacity = _pdfPage <= 1 ? '0.3' : '1';
+  if (next) next.style.opacity = _pdfPage >= _pdfDoc.numPages ? '0.3' : '1';
+}
+
+function _pdfRenderPage(pageNum) {
+  if (!_pdfDoc || _pdfRendering) return;
+  _pdfRendering = true;
+
+  _pdfDoc.getPage(pageNum).then(function(page) {
+    const canvas = document.getElementById('pdf-canvas');
+    if (!canvas) { _pdfRendering = false; return; } // safety — canvas missing
+    const ctx    = canvas.getContext('2d');
+
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+    const modal  = document.getElementById('modal-pdf-viewer');
+    const freshW = modal ? modal.clientWidth : window.innerWidth;
+    const maxW   = Math.min(freshW - 16, 900);
+    const baseVP = page.getViewport({ scale: 1 });
+
+    const fitScale    = maxW / baseVP.width;
+    const MIN_SCALE   = 1.5;
+    const renderScale = Math.max(fitScale, MIN_SCALE) * dpr;
+    const displayScale = fitScale;
+
+    const viewport = page.getViewport({ scale: renderScale });
+
+    canvas.width  = viewport.width;
+    canvas.height = viewport.height;
+    canvas.style.width  = (baseVP.width  * displayScale) + 'px';
+    canvas.style.height = (baseVP.height * displayScale) + 'px';
+
+    page.render({
+      canvasContext: ctx,
+      viewport: viewport,
+      intent: 'display'
+    }).promise.then(function() {
+      _pdfRendering = false;
+      _pdfBaseW = parseFloat(canvas.style.width)  || canvas.offsetWidth;
+      _pdfBaseH = parseFloat(canvas.style.height) || canvas.offsetHeight;
+      _pdfResetZoom();
+
+      // Preload adjacent pages into PDF.js internal cache
+      // Makes next/prev navigation near-instant (cached → no re-fetch)
+      // Only ±1 page — controlled bandwidth & memory usage
+      if (_pdfDoc) {
+        if (_pdfPage > 1)                _pdfDoc.getPage(_pdfPage - 1); // prev
+        if (_pdfPage < _pdfDoc.numPages) _pdfDoc.getPage(_pdfPage + 1); // next
+      }
+    });
+  }).catch(function(err) {
+    _pdfRendering = false;
+    console.error('[PDF Viewer] Render error:', err);
+  });
+}
+
+// ── Zoom quality re-render ────────────────────────────────────
+// Called after zoom settles (debounced 250ms)
+// Re-renders current page at new zoom scale for sharp output
+// Active render task reference — used to cancel if zoom changes again
+let _pdfActiveRenderTask = null;
+
+function _pdfZoomRerender() {
+  if (!_pdfDoc) return;
+  // Only re-render if zoom changed significantly
+  if (Math.abs(_pdfZoom - _pdfLastRenderedZoom) < 0.3) return;
+
+  const oldCanvas = document.getElementById('pdf-canvas');
+  const wrap      = document.getElementById('pdf-canvas-wrap');
+  const modal     = document.getElementById('modal-pdf-viewer');
+  if (!oldCanvas || !wrap || !modal) return;
+
+  // Cancel any in-progress render (user zoomed again)
+  if (_pdfActiveRenderTask) {
+    try { _pdfActiveRenderTask.cancel(); } catch(e) {}
+    _pdfActiveRenderTask = null;
+  }
+
+  const dpr        = Math.min(window.devicePixelRatio || 1, 2);
+  const freshW     = modal.clientWidth;
+  const maxW       = Math.min(freshW - 16, 900);
+  const targetZoom = _pdfZoom; // capture zoom at this moment
+
+  _pdfDoc.getPage(_pdfPage).then(function(page) {
+    // If zoom changed again while fetching page — abort
+    if (targetZoom !== _pdfZoom) return;
+
+    const baseVP      = page.getViewport({ scale: 1 });
+    const fitScale    = maxW / baseVP.width;
+    const baseRender  = Math.max(fitScale, 1.5) * dpr;
+    const zoomedScale = Math.min(baseRender * targetZoom, _PDF_MAX_RENDER_SCALE);
+    const viewport    = page.getViewport({ scale: zoomedScale });
+
+    // ── Double buffer: render on hidden canvas ────────────────
+    const offscreen = document.createElement('canvas');
+    offscreen.width  = viewport.width;
+    offscreen.height = viewport.height;
+    // CSS display size = zoomed size
+    offscreen.style.display      = 'block';
+    offscreen.style.marginLeft   = oldCanvas.style.marginLeft;
+    offscreen.style.marginRight  = oldCanvas.style.marginRight;
+    offscreen.style.width        = (_pdfBaseW * targetZoom) + 'px';
+    offscreen.style.height       = (_pdfBaseH * targetZoom) + 'px';
+    offscreen.style.imageRendering = 'auto';
+    offscreen.style.borderRadius = '4px';
+    offscreen.style.background   = '#fff';
+    offscreen.style.boxShadow    = '0 4px 32px rgba(0,0,0,0.6)';
+
+    // Save scroll before swap
+    const savedLeft = wrap.scrollLeft;
+    const savedTop  = wrap.scrollTop;
+
+    const ctx = offscreen.getContext('2d');
+    _pdfActiveRenderTask = page.render({
+      canvasContext: ctx,
+      viewport: viewport,
+      intent: 'display'
+    });
+
+    _pdfActiveRenderTask.promise.then(function() {
+      _pdfActiveRenderTask = null;
+      // If zoom changed during render — discard, don't swap
+      if (targetZoom !== _pdfZoom) return;
+
+      // ── Instant swap: old canvas out, new canvas in ───────
+      offscreen.id = 'pdf-canvas';
+      wrap.insertBefore(offscreen, oldCanvas);
+      wrap.removeChild(oldCanvas); // remove old immediately after swap
+
+      _pdfLastRenderedZoom = targetZoom;
+      // Restore scroll
+      wrap.scrollLeft = savedLeft;
+      wrap.scrollTop  = savedTop;
+
+    }).catch(function(err) {
+      _pdfActiveRenderTask = null;
+      // Render was cancelled — silent, old canvas still visible ✅
+    });
+  });
+}
+
+function pdfNextPage() {
+  if (!_pdfDoc || _pdfPage >= _pdfDoc.numPages) return;
+  _pdfPage++;
+  _pdfUpdatePageUI();
+  _pdfResumeSave(_pdfUrl, _pdfPage); // save last viewed page
+  _pdfResetZoom();
+  _pdfRenderPage(_pdfPage);
+}
+
+function pdfPrevPage() {
+  if (!_pdfDoc || _pdfPage <= 1) return;
+  _pdfPage--;
+  _pdfUpdatePageUI();
+  _pdfResumeSave(_pdfUrl, _pdfPage); // save last viewed page
+  _pdfResetZoom();
+  _pdfRenderPage(_pdfPage);
+}
+
+// ── Page selector open/close/select ─────────────────────────
+function pdfOpenPageSelector() {
+  if (!_pdfDoc) return;
+  const overlay = document.getElementById('pdf-page-selector');
+  const grid    = document.getElementById('pdf-page-grid');
+  if (!overlay || !grid) return;
+
+  // Build page number grid
+  const total = _pdfDoc.numPages;
+  let html = '';
+  for (let i = 1; i <= total; i++) {
+    const isCurrent = i === _pdfPage;
+    html += `<button onclick="pdfGoToPage(${i})"
+      style="background:${isCurrent ? 'var(--neon-blue,#00d4ff)' : 'var(--bg-card2,#252540)'};
+      color:${isCurrent ? '#000' : 'var(--text-white,#fff)'};
+      border:1px solid ${isCurrent ? 'var(--neon-blue,#00d4ff)' : 'var(--border,#333)'};
+      border-radius:6px; padding:8px 4px; font-size:13px; font-weight:${isCurrent ? '700' : '400'};
+      cursor:pointer; width:100%;">${i}</button>`;
+  }
+  grid.innerHTML = html;
+
+  // Scroll current page into view
+  overlay.style.display = 'flex';
+  // After render, scroll highlighted button into view
+  requestAnimationFrame(function() {
+    const active = grid.querySelector('button[style*="color:#000"]');
+    if (active) active.scrollIntoView({ block: 'center' });
+  });
+}
+
+function pdfClosePageSelector() {
+  const overlay = document.getElementById('pdf-page-selector');
+  if (overlay) overlay.style.display = 'none';
+}
+
+function pdfGoToPage(pageNum) {
+  if (!_pdfDoc || pageNum < 1 || pageNum > _pdfDoc.numPages) return;
+  pdfClosePageSelector();
+  _pdfPage = pageNum;
+  _pdfUpdatePageUI();
+  _pdfResumeSave(_pdfUrl, _pdfPage); // save last viewed page
+  _pdfResetZoom();
+  _pdfRenderPage(_pdfPage);
+}
+
+function pdfDownload() {
+  if (!_pdfUrl) return;
+  const a = document.createElement('a');
+  a.href = _pdfUrl;
+  a.download = document.getElementById('pdf-viewer-title').textContent || 'document.pdf';
+  a.target = '_blank';
+  a.click();
+}
+
+function closePdfViewer() {
+  const modal = document.getElementById('modal-pdf-viewer');
+  modal.style.display = 'none';
+  document.body.style.overflow = '';
+
+  // Cancel any in-progress zoom re-render
+  if (_pdfActiveRenderTask) {
+    try { _pdfActiveRenderTask.cancel(); } catch(e) {}
+    _pdfActiveRenderTask = null;
+  }
+  clearTimeout(_pdfZoomRenderTimer);
+
+  _pdfDoc       = null;
+  _pdfUrl       = '';
+  _pdfPage      = 1;
+  _pdfZoom      = 1;
+  _pdfPanX      = 0;
+  _pdfPanY      = 0;
+  _pdfBaseW     = 0;
+  _pdfBaseH     = 0;
+  _pdfRendering = false;
+  _pdfFocalX    = 0.5;
+  _pdfFocalY    = 0.0;
+  _pdfLastRenderedZoom = 1;
+  _pdfIsPinching = false;
+  _pdfIsDragging = false;
+  clearTimeout(_pdfResizeTimer);
+
+  // Hide page selector and bottom nav
+  const sel = document.getElementById('pdf-page-selector');
+  if (sel) sel.style.display = 'none';
+  const nav = document.getElementById('pdf-bottom-nav');
+  if (nav) nav.style.display = 'none';
+  const canvas = document.getElementById('pdf-canvas');
+  if (canvas) {
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    canvas.style.transform = '';
+  }
+}
+
+// ── Apply zoom to canvas (scroll handles pan natively) ───────
+
+function _pdfApplyTransform() {
+  const canvas = document.getElementById('pdf-canvas');
+  const wrap   = document.getElementById('pdf-canvas-wrap');
+  if (!canvas || !_pdfBaseW) return;
+
+  const oldZoomedW = _pdfBaseW * (_pdfZoom / (_pdfZoom)); // = _pdfBaseW (before)
+  // Actually we need old canvas size BEFORE this call
+  const oldW = parseFloat(canvas.style.width)  || _pdfBaseW;
+  const oldH = parseFloat(canvas.style.height) || _pdfBaseH;
+
+  const newZoomedW = _pdfBaseW * _pdfZoom;
+  const newZoomedH = _pdfBaseH * _pdfZoom;
+
+  // Point on canvas that should stay fixed (in px, old size)
+  const focalPxX = _pdfFocalX * oldW;
+  const focalPxY = _pdfFocalY * oldH;
+
+  // Where that point was on screen (relative to wrap)
+  const screenX = focalPxX - (wrap ? wrap.scrollLeft : 0);
+  const screenY = focalPxY - (wrap ? wrap.scrollTop  : 0);
+
+  // Update canvas size
+  canvas.style.width  = newZoomedW + 'px';
+  canvas.style.height = newZoomedH + 'px';
+
+  // Center horizontally if canvas narrower than wrap
+  if (wrap && newZoomedW <= wrap.clientWidth) {
+    canvas.style.marginLeft  = 'auto';
+    canvas.style.marginRight = 'auto';
+  } else {
+    canvas.style.marginLeft  = '0';
+    canvas.style.marginRight = '0';
+  }
+
+  canvas.style.transform = 'none';
+
+  // Adjust scroll so focal point stays at same screen position
+  if (wrap) {
+    // Where focal point is now (new size)
+    const newFocalPxX = _pdfFocalX * newZoomedW;
+    const newFocalPxY = _pdfFocalY * newZoomedH;
+    wrap.scrollLeft = newFocalPxX - screenX;
+    wrap.scrollTop  = newFocalPxY - screenY;
+  }
+
+  // Update zoom indicator
+  const ind = document.getElementById('pdf-zoom-ind');
+  if (ind) ind.textContent = Math.round(_pdfZoom * 100) + '%';
+
+  // Debounced re-render for sharpness (friend's hybrid approach)
+  // During zoom: CSS resize only (smooth, no lag)
+  // After zoom settles 250ms: re-render at new scale (sharp) ✅
+  clearTimeout(_pdfZoomRenderTimer);
+  _pdfZoomRenderTimer = setTimeout(_pdfZoomRerender, 250);
+}
+
+// ── Reset zoom (page change / orientation change) ─────────────
+function _pdfResetZoom() {
+  _pdfZoom = 1;
+  _pdfPanX = 0;
+  _pdfPanY = 0;
+  _pdfLastRenderedZoom = 1; // reset so next zoom triggers re-render
+  clearTimeout(_pdfZoomRenderTimer); // cancel any pending zoom re-render
+  _pdfApplyTransform();
+  const wrap = document.getElementById('pdf-canvas-wrap');
+  if (wrap) { wrap.scrollTop = 0; wrap.scrollLeft = 0; }
+}
+
+// ── Zoom In / Out buttons ─────────────────────────────────────
+function pdfZoomIn() {
+  // Zoom from center of visible area
+  _pdfFocalX = 0.5; _pdfFocalY = 0.5;
+  _pdfZoom = Math.min(_pdfZoom * 1.3, _PDF_ZOOM_MAX);
+  _pdfApplyTransform();
+}
+function pdfZoomOut() {
+  _pdfFocalX = 0.5; _pdfFocalY = 0.5;
+  _pdfZoom = Math.max(_pdfZoom / 1.3, _PDF_ZOOM_MIN);
+  if (_pdfZoom < 1.05) { _pdfZoom = 1; }
+  _pdfApplyTransform();
+}
+
+// ── Pinch zoom + pan touch handler ───────────────────────────
+function _pdfInitTouchHandlers() {
+  const wrap = document.getElementById('pdf-canvas-wrap');
+  if (!wrap || wrap._pdfTouchBound) return;
+  wrap._pdfTouchBound = true;
+
+  // ── PINCH ZOOM ───────────────────────────────────────────
+  wrap.addEventListener('touchstart', function(e) {
+    if (e.touches.length === 2) {
+      _pdfIsPinching = true;
+      _pdfIsDragging = false;
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      _pdfPinchStartDist = Math.sqrt(dx*dx + dy*dy);
+      _pdfPinchStartZoom = _pdfZoom;
+      // Pinch midpoint relative to canvas → convert to % for transformOrigin
+      const canvas = document.getElementById('pdf-canvas');
+      const cRect  = canvas ? canvas.getBoundingClientRect() : wrap.getBoundingClientRect();
+      const midX   = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+      const midY   = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+      // Clamp to 0-100%
+      _pdfZoomOriginX = Math.min(100, Math.max(0, ((midX - cRect.left) / cRect.width)  * 100));
+      _pdfZoomOriginY = Math.min(100, Math.max(0, ((midY - cRect.top)  / cRect.height) * 100));
+      e.preventDefault();
+    } else if (e.touches.length === 1) {
+      _pdfIsDragging = true;
+      _pdfIsPinching = false;
+      _pdfDragStartX = e.touches[0].clientX - _pdfPanX;
+      _pdfDragStartY = e.touches[0].clientY - _pdfPanY;
+      // Double tap detection
+      const now = Date.now();
+      if (now - _pdfLastTap < 280) {
+        if (_pdfZoom > 1.05) {
+          // Reset zoom — back to center
+          _pdfZoomOriginX = 50;
+          _pdfZoomOriginY = 0;
+          _pdfResetZoom();
+        } else {
+          // Zoom 2x from tap position
+          const canvas = document.getElementById('pdf-canvas');
+          const cRect  = canvas ? canvas.getBoundingClientRect() : wrap.getBoundingClientRect();
+          _pdfFocalX = Math.min(1, Math.max(0, (e.touches[0].clientX - cRect.left) / cRect.width));
+          _pdfFocalY = Math.min(1, Math.max(0, (e.touches[0].clientY - cRect.top)  / cRect.height));
+          _pdfZoom = 2;
+          _pdfApplyTransform();
+        }
+        _pdfLastTap = 0;
+        e.preventDefault();
+        return;
+      }
+      _pdfLastTap = now;
+    }
+  }, { passive: false });
+
+  wrap.addEventListener('touchmove', function(e) {
+    if (_pdfIsPinching && e.touches.length === 2) {
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      const dist    = Math.sqrt(dx*dx + dy*dy);
+      const newZoom = Math.min(Math.max(_pdfPinchStartZoom * (dist / _pdfPinchStartDist), _PDF_ZOOM_MIN), _PDF_ZOOM_MAX);
+
+      // Set focal point = pinch midpoint as ratio of current canvas size
+      const canvas  = document.getElementById('pdf-canvas');
+      const cRect   = canvas ? canvas.getBoundingClientRect() : null;
+      if (cRect && cRect.width > 0) {
+        const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+        const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+        _pdfFocalX = Math.min(1, Math.max(0, (midX - cRect.left) / cRect.width));
+        _pdfFocalY = Math.min(1, Math.max(0, (midY - cRect.top)  / cRect.height));
+      }
+
+      _pdfZoom = newZoom;
+      _pdfApplyTransform();
+      e.preventDefault();
+    }
+    // Single finger drag → native scroll handles it
+  }, { passive: false });
+
+  wrap.addEventListener('touchend', function(e) {
+    if (e.touches.length < 2) _pdfIsPinching = false;
+    if (e.touches.length === 0) {
+      _pdfIsDragging = false;
+      // Snap zoom back if below min
+      if (_pdfZoom < _PDF_ZOOM_MIN) {
+        _pdfZoom = _PDF_ZOOM_MIN;
+        _pdfApplyTransform();
+      }
+    }
+  }, { passive: true });
+}
+
+
+// =============================================================
+// CUSTOM AUDIO PLAYER
+// =============================================================
+let _audioUrl         = '';
+let _audioTitle       = '';
+let _audioDeliveryUrl = ''; // compressed/optimized URL used for playback & download
+let _audioDragging = false; // true while finger/mouse drags seekbar
+
+// =============================================================
+// MINI AUDIO PLAYER
+// =============================================================
+let _audioMiniOpen = false; // panel expanded or collapsed
+
+function audioMinimize() {
+  const modal = document.getElementById('modal-audio-player');
+  if (modal) modal.style.display = 'none';
+  // Only restore body scroll if PDF viewer is also not open
+  const pdfOpen = document.getElementById('modal-pdf-viewer');
+  if (!pdfOpen || pdfOpen.style.display !== 'flex') {
+    document.body.style.overflow = '';
+  }
+  _audioShowMiniTab();
+  _audioMiniOpen = false;
+}
+
+function _audioShowMiniTab() {
+  const tab   = document.getElementById('audio-mini-tab');
+  const panel = document.getElementById('audio-mini-panel');
+  const title = document.getElementById('audio-mini-title');
+  const arrow = document.getElementById('audio-mini-arrow');
+  if (tab)   tab.style.display   = 'flex';
+  if (panel) panel.style.display = 'block';
+  if (title) title.textContent   = _audioTitle || 'Audio';
+  if (arrow) arrow.style.transform = 'rotate(0deg)'; // always ◀ on fresh show
+  _audioMiniOpen = false; // start collapsed
+  _audioMiniSyncBtn();
+}
+
+function _audioHideMiniPlayer() {
+  const tab   = document.getElementById('audio-mini-tab');
+  const panel = document.getElementById('audio-mini-panel');
+  if (tab)   tab.style.display   = 'none';
+  if (panel) {
+    panel.style.display   = 'none';
+    panel.style.transform = 'translateY(-50%) translateX(calc(100% + 54px))';
+  }
+  _audioMiniOpen = false;
+}
+
+function audioToggleMini() {
+  _audioMiniOpen = !_audioMiniOpen;
+  const panel = document.getElementById('audio-mini-panel');
+  const arrow = document.getElementById('audio-mini-arrow');
+  if (!panel) return;
+  if (_audioMiniOpen) {
+    // Slide panel into view — stops just left of arrow tab
+    panel.style.transform = 'translateY(-50%) translateX(0)';
+    if (arrow) arrow.style.transform = 'rotate(180deg)';
+  } else {
+    // Slide panel out to right
+    panel.style.transform = 'translateY(-50%) translateX(calc(100% + 54px))';
+    if (arrow) arrow.style.transform = 'rotate(0deg)';
+  }
+}
+
+function audioExpandFull() {
+  // Hide mini panel (keep tab hidden too until re-minimized)
+  const panel = document.getElementById('audio-mini-panel');
+  const tab   = document.getElementById('audio-mini-tab');
+  if (panel) {
+    panel.style.transform = 'translateY(-50%) translateX(calc(100% + 54px))';
+    panel.style.display   = 'none';
+  }
+  if (tab) tab.style.display = 'none';
+  _audioMiniOpen = false;
+
+  // Open full player — z-index:11000 so it sits above PDF viewer (9999)
+  const modal = document.getElementById('modal-audio-player');
+  if (modal) modal.style.display = 'flex';
+  // Don't set body overflow hidden if PDF is open — PDF manages its own scroll
+  const pdfOpen = document.getElementById('modal-pdf-viewer');
+  if (!pdfOpen || pdfOpen.style.display !== 'flex') {
+    document.body.style.overflow = 'hidden';
+  }
+  history.pushState({ audioPlayer: true }, '', location.href);
+}
+
+// Keep mini play button in sync with audio state
+function _audioMiniSyncBtn() {
+  const audio = document.getElementById('bci-audio-el');
+  const btn   = document.getElementById('audio-mini-play-btn');
+  if (!btn) return;
+  const playing = audio && !audio.paused;
+  btn.textContent = playing ? '⏸' : '▶';
+}
+
+// =============================================================
+// AUDIO RESUME — Last Position (localStorage)
+// Same logic as PDF resume: 7 day expiry, max 20 entries
+// =============================================================
+const _AUD_RESUME_PREFIX      = 'bci_aud_';
+const _AUD_RESUME_EXPIRY_DAYS = 7;
+const _AUD_RESUME_MAX_ENTRIES = 20;
+let   _audResumeTimer         = null; // debounce timer
+
+// Extract unique ID from Cloudinary URL (same as PDF)
+function _audGetId(url) {
+  try {
+    const vMatch = url.match(/\/(v\d+)\//);
+    const fMatch = url.match(/\/([^\/]+\.(mp3|wav|ogg|m4a|aac))(\?|$)/i);
+    const version  = vMatch ? vMatch[1] : '';
+    const filename = fMatch ? fMatch[1] : url.slice(-20);
+    const fileKey  = (version + '_' + filename).replace(/[^a-zA-Z0-9_]/g, '_');
+    // Include student ID — prevents cross-student cache pollution on shared browser
+    return _getStudentCacheId() + '_' + fileKey;
+  } catch(e) { return null; }
+}
+
+// Save current position (debounced 2s — not on every timeupdate)
+function _audResumeSave(url, currentTime) {
+  clearTimeout(_audResumeTimer);
+  _audResumeTimer = setTimeout(function() {
+    try {
+      const id = _audGetId(url);
+      if (!id) return;
+      localStorage.setItem(_AUD_RESUME_PREFIX + id,
+        JSON.stringify({ time: Math.floor(currentTime), savedAt: Date.now() })
+      );
+      _audResumeCleanup();
+    } catch(e) { /* silent — incognito or storage full */ }
+  }, 2000);
+}
+
+// Load saved position — returns seconds or 0 (fallback)
+function _audResumeLoad(url) {
+  try {
+    const id  = _audGetId(url);
+    if (!id) return 0;
+    const raw = localStorage.getItem(_AUD_RESUME_PREFIX + id);
+    if (!raw) return 0;
+    const data    = JSON.parse(raw);
+    const ageDays = (Date.now() - (data.savedAt || 0)) / (1000 * 60 * 60 * 24);
+    if (ageDays > _AUD_RESUME_EXPIRY_DAYS) {
+      localStorage.removeItem(_AUD_RESUME_PREFIX + id);
+      return 0; // expired → start from beginning
+    }
+    return parseFloat(data.time) || 0;
+  } catch(e) { return 0; /* any error → start from 0, no crash */ }
+}
+
+// Clear saved position when audio ends (no need to resume a finished audio)
+function _audResumeClear(url) {
+  try {
+    const id = _audGetId(url);
+    if (id) localStorage.removeItem(_AUD_RESUME_PREFIX + id);
+  } catch(e) {}
+}
+
+// Auto cleanup — remove expired + keep max 20 entries
+function _audResumeCleanup() {
+  try {
+    const now      = Date.now();
+    const expiryMs = _AUD_RESUME_EXPIRY_DAYS * 24 * 60 * 60 * 1000;
+    const entries  = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key || !key.startsWith(_AUD_RESUME_PREFIX)) continue;
+      try {
+        const data = JSON.parse(localStorage.getItem(key));
+        if (now - (data.savedAt || 0) > expiryMs) {
+          localStorage.removeItem(key);
+        } else {
+          entries.push({ key, savedAt: data.savedAt || 0 });
+        }
+      } catch(e) { localStorage.removeItem(key); }
+    }
+    if (entries.length > _AUD_RESUME_MAX_ENTRIES) {
+      entries.sort(function(a,b) { return a.savedAt - b.savedAt; });
+      entries.slice(0, entries.length - _AUD_RESUME_MAX_ENTRIES)
+             .forEach(function(e) { localStorage.removeItem(e.key); });
+    }
+  } catch(e) {}
+}
+
+// ── Audio loader hide helper ───────────────────────────────
+// Enforces minimum 300ms visibility to prevent flicker on fast loads
+// Called by: canplay, play, error events and 6s safety timeout
+function _audioHideLoader() {
+  clearTimeout(window._audioLoaderTimeout); // cancel safety timeout if already fired
+  const elapsed = Date.now() - (window._audioLoaderShownAt || 0);
+  const remaining = Math.max(0, 300 - elapsed); // enforce min 300ms
+  setTimeout(function() {
+    const sub = document.getElementById('audio-player-subtitle');
+    if (sub && sub.querySelector('#audio-loading-dot')) {
+      sub.innerHTML = 'BCI Audio Lecture';
+    }
+  }, remaining);
+}
+
+function openAudioPlayer(url, title) {
+  _audioUrl   = url;
+  _audioTitle = title || 'Audio Lecture';
+
+  const modal = document.getElementById('modal-audio-player');
+  const audio = document.getElementById('bci-audio-el');
+  if (!modal || !audio) return;
+
+  // Set title
+  document.getElementById('audio-player-title').textContent = _audioTitle;
+
+  // ── Cloudinary Audio Optimization ──────────────────────────────
+  // Transforms Cloudinary audio URL for optimized delivery:
+  //   q_auto  → auto quality
+  //   f_mp3   → convert to mp3
+  //   br_96k  → 96kbps bitrate (ideal for voice/lectures)
+  // Only ONE variant is generated and cached by Cloudinary.
+  // Non-Cloudinary URLs are used as-is (no transformation applied).
+  // To disable optimization: set AUDIO_OPTIMIZE = false
+  // To change bitrate: update br_96k → br_64k / br_128k etc.
+  // ───────────────────────────────────────────────────────────────
+  const AUDIO_OPTIMIZE = true; // set false to disable optimization
+
+  // Builds playback URL — no fl_attachment (would block streaming)
+  function _buildAudioUrl(rawUrl) {
+    if (!AUDIO_OPTIMIZE) return rawUrl;
+    const match = rawUrl.match(/^(https:\/\/res\.cloudinary\.com\/[^\/]+\/video\/upload\/)(.+)$/);
+    if (!match) return rawUrl; // not a Cloudinary URL — use as-is
+    const base = match[1];
+    const rest = match[2];
+    if (rest.startsWith('q_auto') || rest.startsWith('fl_')) return rawUrl; // avoid double-apply
+    return base + 'q_auto,f_mp3,br_64k/' + rest;
+  }
+
+  const deliveryUrl = _buildAudioUrl(url); // for playback
+  // Download uses same compressed URL as playback
+  // fl_attachment not used — requires paid Cloudinary plan (causes 423 on free plan)
+  // Browser download is triggered via <a download> in audioDownload()
+  _audioDeliveryUrl = deliveryUrl;
+  // Download button intentionally disabled/hidden
+  // To re-enable: uncomment below and remove display:none from HTML
+  // const _dlBtn = document.getElementById('audio-download-btn');
+  // if (_dlBtn) { _dlBtn.disabled=false; _dlBtn.style.opacity='1'; _dlBtn.style.cursor='pointer'; _dlBtn.style.display=''; }
+
+  // Streaming load — HTML5 audio streams natively (no full download)
+  // preload="metadata" — loads only duration/headers, NOT full audio
+  // This saves bandwidth — full audio streams on play, not on open
+  audio.src     = deliveryUrl;
+  audio.preload = 'metadata';
+  audio.load();
+
+  // Store resume time — will be applied in canplay event
+  // canplay fires after loadedmetadata AND enough buffer — more reliable
+  audio._bciResumeTime = _audResumeLoad(url);
+
+  // Show modal
+  modal.style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+  history.pushState({ audioPlayer: true }, '', location.href);
+  _audioHideMiniPlayer(); // hide mini if it was showing
+
+  // Reset UI
+  _audioUpdatePlayBtn(false);
+  _audioSetFill(0);
+  document.getElementById('audio-current-time').textContent = '0:00';
+  const _remEl = document.getElementById('audio-remain-time');
+  if (_remEl) _remEl.textContent = '-0:00';
+
+  // ── Audio Loading Indicator ────────────────────────────────
+  // Shows spinner while audio buffers (non-blocking — user can still interact)
+  // Hidden by: canplay event (primary) | play event (fallback) | 6s timeout (safety)
+  // Minimum visible duration: 300ms (prevents flicker on fast loads)
+  // ───────────────────────────────────────────────────────────
+  const _subLoading = document.getElementById('audio-player-subtitle');
+  if (_subLoading) {
+    _subLoading.innerHTML =
+      '<span style="display:inline-flex;align-items:center;gap:5px;">' +
+      '<span id="audio-loading-dot" style="' +
+        'display:inline-block;width:10px;height:10px;border-radius:50%;' +
+        'border:2px solid rgba(0,212,255,0.3);border-top-color:#00d4ff;' +
+        'animation:spin 0.7s linear infinite;flex-shrink:0;' +
+      '"></span>' +
+      '<span style="color:var(--neon-blue,#00d4ff);font-size:11px;">Preparing audio...</span>' +
+      '</span>';
+  }
+  // Record when loader started — for minimum duration enforcement
+  window._audioLoaderShownAt = Date.now();
+  // Safety timeout — hide loader after 6s if canplay never fires (network issue)
+  clearTimeout(window._audioLoaderTimeout);
+  window._audioLoaderTimeout = setTimeout(function() {
+    _audioHideLoader();
+  }, 6000);
+  const volEl = document.getElementById('audio-volume');
+  const volLbl = document.getElementById('audio-vol-label');
+  if (volEl) volEl.value = '100';
+  if (volLbl) volLbl.textContent = '100%';
+  audio.volume = 1;
+  audio.playbackRate = 1;
+  audioSetSpeed(1); // reset speed highlight to 1x
+  _audioStopPulse();
+}
+
+function closeAudioPlayer() {
+  const modal = document.getElementById('modal-audio-player');
+  const audio = document.getElementById('bci-audio-el');
+
+  // Cancel pending debounce timer
+  clearTimeout(_audResumeTimer);
+
+  // Save current position immediately before closing
+  // (debounce would be cancelled, so save directly)
+  if (_audioUrl && audio && audio.currentTime > 0 && audio.duration > 0) {
+    try {
+      const id = _audGetId(_audioUrl);
+      if (id) {
+        localStorage.setItem(_AUD_RESUME_PREFIX + id,
+          JSON.stringify({ time: Math.floor(audio.currentTime), savedAt: Date.now() })
+        );
+      }
+    } catch(e) {}
+  }
+
+  if (modal) modal.style.display = 'none';
+  if (audio) { audio.pause(); audio.src = ''; }
+  document.body.style.overflow = '';
+  _audioUrl = ''; _audioTitle = ''; _audioDeliveryUrl = '';
+  // Download button is hidden — no reset needed
+  // const _dlBtnClose = document.getElementById('audio-download-btn');
+  // if (_dlBtnClose) { _dlBtnClose.disabled=true; _dlBtnClose.style.opacity='0.4'; _dlBtnClose.textContent='⬇️'; }
+  _audioSpeedIdx = 1; // reset speed to 1x for next open
+  const _speedBtn = document.getElementById('audio-speed-btn');
+  if (_speedBtn) _speedBtn.textContent = '1x';
+  // Reset loader state — important when switching between audios
+  clearTimeout(window._audioLoaderTimeout);
+  window._audioLoaderShownAt = 0;
+  const _subClose = document.getElementById('audio-player-subtitle');
+  if (_subClose && _subClose.querySelector('#audio-loading-dot')) {
+    _subClose.innerHTML = 'BCI Audio Lecture';
+  }
+  _audioUpdatePlayBtn(false);
+  _audioStopPulse();
+  _audioHideMiniPlayer(); // hide mini player too
+}
+
+function audioDownload() {
+  // ── Audio Download ───────────────────────────────────────────
+  // Uses direct anchor click — browser handles everything natively:
+  //   ✅ Large file safety  — no RAM spike, browser streams to disk
+  //   ✅ Network resilience — browser handles drop/resume natively
+  //   ✅ Memory safe        — no blob in JS memory (safe on low-end Android)
+  //   ✅ Simple & stable    — minimal code, maximum reliability
+  // Downloads compressed version: q_auto,f_mp3,br_64k
+  // ─────────────────────────────────────────────────────────────
+
+  // Safety check — URL not ready yet
+  if (!_audioDeliveryUrl && !_audioUrl) {
+    showToast('Audio is not ready yet. Please wait a moment.', 'warning', 3000);
+    return;
+  }
+
+  const btn = document.getElementById('audio-download-btn');
+  // Prevent multiple taps
+  if (btn && btn.disabled) return;
+
+  const downloadUrl = _audioDeliveryUrl || _audioUrl;
+  const filename    = (_audioTitle || 'audio') + '.mp3';
+
+  // Show downloading state immediately
+  if (btn) {
+    btn.disabled      = true;
+    btn.textContent   = '⏳';
+    btn.style.opacity = '0.6';
+    btn.style.cursor  = 'not-allowed';
+  }
+  showToast('Downloading ' + filename + '...', 'info', 3000);
+
+  // fetch → blob → object URL approach
+  // This forces download instead of opening in new tab
+  // (cross-origin audio URLs open in new tab with direct anchor)
+  fetch(downloadUrl)
+    .then(function(res) {
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      return res.blob();
+    })
+    .then(function(blob) {
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href     = blobUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(function() { URL.revokeObjectURL(blobUrl); }, 5000);
+      showToast('Download complete!', 'success', 2500);
+      if (btn) {
+        btn.disabled      = false;
+        btn.textContent   = '⬇️';
+        btn.style.opacity = '1';
+        btn.style.cursor  = 'pointer';
+      }
+    })
+    .catch(function() {
+      // Fallback — direct anchor if fetch fails
+      const a = document.createElement('a');
+      a.href     = downloadUrl;
+      a.download = filename;
+      a.target   = '_blank';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      if (btn) {
+        btn.disabled      = false;
+        btn.textContent   = '⬇️';
+        btn.style.opacity = '1';
+        btn.style.cursor  = 'pointer';
+      }
+    });
+}
+
+function audioTogglePlay() {
+  const audio = document.getElementById('bci-audio-el');
+  if (!audio) return;
+  if (audio.paused) { audio.play().catch(function(){}); }
+  else { audio.pause(); }
+}
+
+function audioSkip(seconds) {
+  const audio = document.getElementById('bci-audio-el');
+  if (!audio || !audio.duration || isNaN(audio.duration)) return;
+  const newTime = audio.currentTime + seconds;
+  audio.currentTime = Math.max(0, Math.min(audio.duration, newTime));
+}
+
+function audioSetVolume(val) {
+  const audio = document.getElementById('bci-audio-el');
+  if (!audio) return;
+  audio.volume = val / 100;
+  const lbl = document.getElementById('audio-vol-label');
+  if (lbl) lbl.textContent = val + '%';
+}
+
+// Speed cycle: tap once → next speed
+const _AUDIO_SPEEDS = [0.75, 1, 1.25, 1.5, 2];
+let _audioSpeedIdx  = 1; // default: 1x (index 1)
+
+function audioCycleSpeed() {
+  const audio = document.getElementById('bci-audio-el');
+  if (!audio) return;
+  _audioSpeedIdx = (_audioSpeedIdx + 1) % _AUDIO_SPEEDS.length;
+  const speed    = _AUDIO_SPEEDS[_audioSpeedIdx];
+  audio.playbackRate = speed;
+  const btn = document.getElementById('audio-speed-btn');
+  if (btn) btn.textContent = speed + 'x';
+}
+
+function audioSetSpeed(speed) {
+  // Used on reset — set to 1x
+  const audio = document.getElementById('bci-audio-el');
+  if (!audio) return;
+  audio.playbackRate = speed;
+  _audioSpeedIdx = _AUDIO_SPEEDS.indexOf(speed);
+  if (_audioSpeedIdx < 0) _audioSpeedIdx = 1;
+  const btn = document.getElementById('audio-speed-btn');
+  if (btn) btn.textContent = speed + 'x';
+}
+
+// Tap to seek (mouse click on desktop)
+function audioSeek(e) {
+  const audio = document.getElementById('bci-audio-el');
+  if (!audio || !audio.duration) return;
+  const wrap  = document.getElementById('audio-seekbar-wrap');
+  const rect  = wrap.getBoundingClientRect();
+  const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+  audio.currentTime = ratio * audio.duration;
+}
+
+// ── Helper: set seekbar fill % ─────────────────────────────
+function _audioSetFill(pct) {
+  const fill = document.getElementById('audio-seekbar-fill');
+  if (fill) fill.style.width = Math.max(0, Math.min(100, pct)) + '%';
+}
+
+// ── Format seconds → m:ss ─────────────────────────────────
+function _audioFmt(sec) {
+  if (isNaN(sec) || !isFinite(sec)) return '0:00';
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  return m + ':' + (s < 10 ? '0' : '') + s;
+}
+
+function _audioUpdatePlayBtn(playing) {
+  const btn = document.getElementById('audio-play-btn');
+  if (btn) btn.textContent = playing ? '⏸' : '▶';
+}
+
+// Pulse animation on icon when playing
+function _audioStartPulse() {
+  const wrap = document.getElementById('audio-icon-wrap');
+  if (wrap) {
+    wrap.style.animation = 'audioPulse 2s ease-in-out infinite';
+    wrap.style.willChange = 'transform, opacity'; // GPU hint
+  }
+}
+function _audioStopPulse() {
+  const wrap = document.getElementById('audio-icon-wrap');
+  if (wrap) {
+    wrap.style.animation  = '';
+    wrap.style.opacity    = '1';
+    wrap.style.transform  = 'scale(1)';
+    wrap.style.willChange = 'auto';
+    wrap.style.background = 'linear-gradient(135deg,rgba(0,212,255,0.18),rgba(139,92,246,0.18))';
+  }
+}
+
+// ── Show/hide drag time preview tooltip ───────────────────
+function _audioShowDragPreview(ratio, x) {
+  const audio   = document.getElementById('bci-audio-el');
+  const preview = document.getElementById('audio-drag-preview');
+  const wrap    = document.getElementById('audio-seekbar-wrap');
+  if (!preview || !audio || !audio.duration) return;
+  const time     = ratio * audio.duration;
+  const wrapRect = wrap.getBoundingClientRect();
+  const leftPx   = Math.max(20, Math.min(wrapRect.width - 20, x - wrapRect.left));
+  preview.textContent   = _audioFmt(time);
+  preview.style.left    = leftPx + 'px';
+  preview.style.display = 'block';
+}
+function _audioHideDragPreview() {
+  const preview = document.getElementById('audio-drag-preview');
+  if (preview) preview.style.display = 'none';
+}
+
+// ── Seekbar touch drag (Android) ──────────────────────────
+function _audioInitSeekbar() {
+  const wrap  = document.getElementById('audio-seekbar-wrap');
+  const thumb = document.getElementById('audio-seekbar-thumb');
+  if (!wrap) return;
+
+  function getRatio(clientX) {
+    const rect = wrap.getBoundingClientRect();
+    return Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+  }
+
+  // Touch start — begin drag
+  wrap.addEventListener('touchstart', function(e) {
+    const audio = document.getElementById('bci-audio-el');
+    if (!audio || !audio.duration) return;
+    _audioDragging = true;
+    if (thumb) thumb.style.transform = 'translateY(-50%) scale(1.3)';
+    const ratio = getRatio(e.touches[0].clientX);
+    _audioSetFill(ratio * 100);
+    _audioShowDragPreview(ratio, e.touches[0].clientX);
+    e.preventDefault();
+  }, { passive: false });
+
+  // Touch move — scrub in real-time
+  wrap.addEventListener('touchmove', function(e) {
+    if (!_audioDragging) return;
+    const audio = document.getElementById('bci-audio-el');
+    if (!audio || !audio.duration) return;
+    const ratio = getRatio(e.touches[0].clientX);
+    _audioSetFill(ratio * 100);
+    document.getElementById('audio-current-time').textContent = _audioFmt(ratio * audio.duration);
+    _audioShowDragPreview(ratio, e.touches[0].clientX);
+    e.preventDefault();
+  }, { passive: false });
+
+  // Touch end — commit seek
+  wrap.addEventListener('touchend', function(e) {
+    if (!_audioDragging) return;
+    _audioDragging = false;
+    if (thumb) thumb.style.transform = 'translateY(-50%) scale(1)';
+    _audioHideDragPreview();
+    const audio = document.getElementById('bci-audio-el');
+    if (!audio || !audio.duration) return;
+    const ratio = getRatio(e.changedTouches[0].clientX);
+    audio.currentTime = ratio * audio.duration;
+  }, { passive: true });
+
+  // Mouse drag (desktop)
+  wrap.addEventListener('mousedown', function(e) {
+    const audio = document.getElementById('bci-audio-el');
+    if (!audio || !audio.duration) return;
+    _audioDragging = true;
+    if (thumb) thumb.style.transform = 'translateY(-50%) scale(1.3)';
+    const ratio = getRatio(e.clientX);
+    _audioSetFill(ratio * 100);
+    _audioShowDragPreview(ratio, e.clientX);
+  });
+  document.addEventListener('mousemove', function(e) {
+    if (!_audioDragging) return;
+    const audio = document.getElementById('bci-audio-el');
+    if (!audio || !audio.duration) return;
+    const ratio = getRatio(e.clientX);
+    _audioSetFill(ratio * 100);
+    document.getElementById('audio-current-time').textContent = _audioFmt(ratio * audio.duration);
+    _audioShowDragPreview(ratio, e.clientX);
+  });
+  document.addEventListener('mouseup', function(e) {
+    if (!_audioDragging) return;
+    _audioDragging = false;
+    if (thumb) thumb.style.transform = 'translateY(-50%) scale(1)';
+    _audioHideDragPreview();
+    const audio = document.getElementById('bci-audio-el');
+    if (!audio || !audio.duration) return;
+    const ratio = getRatio(e.clientX);
+    audio.currentTime = ratio * audio.duration;
+  });
+}
+
+// ── Audio element event listeners ─────────────────────────
+// Using direct attachment (not DOMContentLoaded) since element is always in DOM
+(function _audioBindEvents() {
+  // Retry until element is ready
+  function bind() {
+    const audio = document.getElementById('bci-audio-el');
+    if (!audio) { setTimeout(bind, 100); return; }
+
+    // canplay: enough data buffered — set resume position THEN play
+    audio.addEventListener('canplay', function() {
+      const modal = document.getElementById('modal-audio-player');
+      if (!modal || modal.style.display !== 'flex') return;
+
+      // Hide loading indicator — audio is ready (canplay = primary event)
+      _audioHideLoader();
+
+      // Apply resume position once (before first play)
+      if (audio._bciResumeTime && audio._bciResumeTime > 0 && audio.duration > 0) {
+        const t = audio._bciResumeTime;
+        audio._bciResumeTime = 0; // clear so it only applies once
+        if (t < audio.duration - 3) {
+          audio.currentTime = t;
+        }
+      }
+      if (audio.paused) {
+        audio.play().catch(function(){});
+      }
+    });
+
+    audio.addEventListener('play', function() {
+      _audioUpdatePlayBtn(true);
+      _audioMiniSyncBtn();
+      _audioStartPulse();
+      // Hide loading indicator if still showing (play = fallback event)
+      _audioHideLoader();
+      // Also reset subtitle if it was showing an error
+      const sub = document.getElementById('audio-player-subtitle');
+      if (sub && sub.textContent.includes('Failed')) {
+        sub.innerHTML = 'BCI Audio Lecture';
+      }
+    });
+    audio.addEventListener('pause', function() {
+      _audioUpdatePlayBtn(false);
+      _audioMiniSyncBtn();
+      _audioStopPulse();
+    });
+    audio.addEventListener('ended', function() {
+      _audioUpdatePlayBtn(false);
+      _audioStopPulse();
+      _audioSetFill(0);
+      audio.currentTime = 0;
+      // Clear saved position — audio completed, next open starts fresh
+      if (_audioUrl) _audResumeClear(_audioUrl);
+    });
+    audio.addEventListener('loadedmetadata', function() {
+      const remain = document.getElementById('audio-remain-time');
+      if (remain) remain.textContent = '-' + _audioFmt(audio.duration);
+    });
+    audio.addEventListener('timeupdate', function() {
+      if (_audioDragging || !audio.duration) return;
+      const pct = (audio.currentTime / audio.duration) * 100;
+      _audioSetFill(pct);
+      document.getElementById('audio-current-time').textContent = _audioFmt(audio.currentTime);
+      const remain = document.getElementById('audio-remain-time');
+      if (remain) remain.textContent = '-' + _audioFmt(audio.duration - audio.currentTime);
+      // Save position every 2s (debounced) — only when playing
+      if (_audioUrl && !audio.paused) _audResumeSave(_audioUrl, audio.currentTime);
+    });
+    audio.addEventListener('error', function() {
+      // Only show error if audio is genuinely not playing/loadable
+      // Ignore false errors during seek/resume operations
+      if (audio.error && audio.error.code && audio.readyState === 0) {
+        // ── Fallback: if optimized Cloudinary URL failed, retry with original URL ──
+        // This handles cases where transformation is not yet generated or CDN hiccup
+        if (_audioUrl && audio.src !== _audioUrl) {
+          // optimized URL failed → silently fallback to original
+          // Fallback: use original URL for both playback and download
+          _audioDeliveryUrl = _audioUrl;
+          audio.src     = _audioUrl;
+          audio.preload = 'metadata';
+          audio.load();
+          return; // wait for next error event — if original also fails, show error
+        }
+        const sub = document.getElementById('audio-player-subtitle');
+        if (sub) sub.textContent = 'Failed to load — check your connection';
+      }
+    });
+
+    // Init seekbar touch/mouse drag
+    _audioInitSeekbar();
+  }
+  bind();
+})();
+
+// =============================================================
+// ADMIN NOTIFICATIONS
+// =============================================================
+let _notifAll      = [];  // all loaded notifications
+let _notifFilter   = 'all'; // 'all' | 'today' | 'month'
+let _notifLoaded   = false; // true after successful load
+
+// Load notifications from Firestore (called on tab open)
+async function loadAdminNotifications() {
+  const listEl = document.getElementById('notif-list');
+  if (!listEl) return;
+  _notifLoaded = false; // reset on fresh load
+  listEl.innerHTML = '<div style="text-align:center;color:var(--text-dim);padding:40px 0;">Loading...</div>';
+
+  try {
+    // No orderBy — avoids Firestore composite index requirement
+    // Sort client-side after fetching (max 100 docs, negligible performance impact)
+    const snap = await db.collection('adminNotifications')
+      .limit(100)
+      .get();
+
+    _notifAll = snap.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .sort((a, b) => {
+        const ta = a.editedAt?.toDate ? a.editedAt.toDate() : new Date(a.editedAt || 0);
+        const tb = b.editedAt?.toDate ? b.editedAt.toDate() : new Date(b.editedAt || 0);
+        return tb - ta; // newest first
+      });
+    _notifLoaded = true; // mark as loaded before applying filters
+    notifApplyFilters();
+    // Update badge count (unread)
+    _notifUpdateBadge();
+  } catch(e) {
+    _notifLoaded = false; // keep false so filters don't overwrite error message
+    listEl.innerHTML = '<div style="text-align:center;color:var(--danger);padding:40px 0;">Failed to load notifications.</div>';
+  }
+}
+
+// Set time filter and re-render
+function notifSetFilter(filter) {
+  _notifFilter = filter;
+  ['all','today','month'].forEach(f => {
+    const btn = document.getElementById('notif-filter-' + f);
+    if (btn) {
+      btn.className = 'btn btn-sm ' + (f === filter ? 'btn-primary' : 'btn-ghost');
+      btn.style.fontSize = '12px';
+    }
+  });
+  notifApplyFilters();
+}
+
+// Apply both time + class filters and render
+function notifApplyFilters() {
+  // Don't apply filters if data hasn't loaded yet (prevents "No notifications found"
+  // showing when load actually failed)
+  if (!_notifLoaded) return;
+
+  const classFilter = document.getElementById('notif-filter-class')?.value || 'all';
+  const now   = new Date();
+  const today = now.toDateString();
+  const thisMonth = now.getMonth() + '-' + now.getFullYear();
+
+  const filtered = _notifAll.filter(n => {
+    // Time filter
+    if (_notifFilter !== 'all' && n.editedAt) {
+      const d = n.editedAt.toDate ? n.editedAt.toDate() : new Date(n.editedAt);
+      if (_notifFilter === 'today'  && d.toDateString() !== today) return false;
+      if (_notifFilter === 'month'  && (d.getMonth() + '-' + d.getFullYear()) !== thisMonth) return false;
+    }
+    // Class filter
+    if (classFilter !== 'all' && String(n.studentClass) !== String(classFilter)) return false;
+    return true;
+  });
+
+  _notifRender(filtered);
+}
+
+// Render notification list
+function _notifRender(list) {
+  const listEl = document.getElementById('notif-list');
+  if (!listEl) return;
+
+  if (!list.length) {
+    listEl.innerHTML = '<div style="text-align:center;color:var(--text-dim);padding:40px 0;">No notifications found.</div>';
+    return;
+  }
+
+  listEl.innerHTML = list.map(n => {
+    const isRead  = n.read === true;
+    const timeStr = n.editedAt
+      ? (n.editedAt.toDate ? n.editedAt.toDate() : new Date(n.editedAt))
+          .toLocaleString('en-IN', { day:'2-digit', month:'short', year:'numeric',
+                                     hour:'2-digit', minute:'2-digit', hour12:true })
+      : 'Unknown time';
+    const fields  = Array.isArray(n.changedFields) ? n.changedFields.join(', ') : '—';
+
+    return `<div id="notif-${n.id}" onclick="notifMarkRead('${n.id}')" style="
+      background:${isRead ? 'var(--bg-card)' : 'rgba(0,212,255,0.06)'};
+      border:1px solid ${isRead ? 'var(--border)' : 'rgba(0,212,255,0.3)'};
+      border-radius:var(--radius-sm); padding:12px 14px;
+      cursor:pointer; transition:background 0.2s;
+      display:flex; flex-direction:column; gap:4px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+        <div style="display:flex; align-items:center; gap:8px;">
+          ${!isRead ? '<span style="width:8px;height:8px;border-radius:50%;background:var(--neon-blue);flex-shrink:0;"></span>' : '<span style="width:8px;height:8px;flex-shrink:0;"></span>'}
+          <span style="font-weight:600; color:var(--neon-blue); font-size:13px;">${n.studentId}</span>
+          <span style="color:var(--text-dim); font-size:12px;">Class ${n.studentClass}</span>
+        </div>
+        <span style="font-size:11px; color:var(--text-dim); white-space:nowrap;">${timeStr}</span>
+      </div>
+      <div style="font-size:12px; color:var(--text-white); padding-left:16px;">
+        <strong>${n.studentName}</strong> edited their profile
+      </div>
+      <div style="font-size:11px; color:var(--text-dim); padding-left:16px;">
+        Changed: ${fields}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// Mark single notification as read
+async function notifMarkRead(id) {
+  try {
+    await db.collection('adminNotifications').doc(id).update({ read: true });
+    const n = _notifAll.find(x => x.id === id);
+    if (n) n.read = true;
+    const el = document.getElementById('notif-' + id);
+    if (el) {
+      el.style.background = 'var(--bg-card)';
+      el.style.border = '1px solid var(--border)';
+      const dot = el.querySelector('span[style*="border-radius:50%"]');
+      if (dot) dot.style.background = 'transparent';
+    }
+    _notifUpdateBadge();
+  } catch(e) {}
+}
+
+// Mark all as read
+async function notifMarkAllRead() {
+  try {
+    const unread = _notifAll.filter(n => !n.read);
+    if (!unread.length) return;
+    const batch = db.batch();
+    unread.forEach(n => {
+      batch.update(db.collection('adminNotifications').doc(n.id), { read: true });
+      n.read = true;
+    });
+    await batch.commit();
+    notifApplyFilters();
+    _notifUpdateBadge();
+    showToast('All notifications marked as read', 'success', 2000);
+  } catch(e) {}
+}
+
+// Update sidebar badge count
+function _notifUpdateBadge() {
+  const unreadCount = _notifAll.filter(n => !n.read).length;
+  const badge = document.getElementById('notif-badge');
+  if (!badge) return;
+  if (unreadCount > 0) {
+    badge.style.display = 'inline-flex';
+    badge.textContent   = unreadCount > 99 ? '99+' : unreadCount;
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
+// Check unread count on admin dashboard load (for badge)
+async function _notifCheckUnread() {
+  try {
+    const snap = await db.collection('adminNotifications').limit(100).get();
+    const unreadCount = snap.docs.filter(d => d.data().read === false).length;
+    const badge = document.getElementById('notif-badge');
+    if (!badge) return;
+    if (unreadCount > 0) {
+      badge.style.display = 'inline-flex';
+      badge.textContent   = unreadCount > 99 ? '99+' : unreadCount;
+    } else {
+      badge.style.display = 'none';
+    }
+  } catch(e) {}
+}
 
 // =============================================================
 // PWA — Service Worker + Sidebar Install Button
