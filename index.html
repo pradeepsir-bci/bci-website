@@ -578,7 +578,7 @@ textarea.form-control {
    ============================================================= */
 .modal-overlay {
   position: fixed;
-  inset: 0;
+  top: 0; left: 0; right: 0; bottom: 0; /* inset:0 fallback for old Android */
   background: rgba(0,0,0,0.8);
   backdrop-filter: blur(4px);
   z-index: 1000;
@@ -1802,6 +1802,28 @@ input:checked + .slider:before {
 </style>
 <!-- PDF.js — in-app PDF viewer -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <style>
+    /* ============================================================
+       COMPATIBILITY FALLBACKS — Old Android / Chrome < 84
+       These are safe — modern browsers ignore fallback values
+       ============================================================ */
+    
+    /* Flex gap fallback — gap not supported in flex before Chrome 84 */
+    @supports not (gap: 1px) {
+      /* Sidebar nav spacing */
+      .sidebar-nav > * + * { margin-top: 4px; }
+      /* Modal footer buttons */
+      .modal-footer > * + * { margin-left: 10px; }
+      /* Card grids */
+      .stats-grid > * { margin: 4px; }
+      .btn + .btn { margin-left: 8px; }
+    }
+
+    /* aspect-ratio fallback for old Android */
+    @supports not (aspect-ratio: 1) {
+      .att-day-cell { height: 36px !important; }
+    }
+  </style>
 </head>
 <body>
 
@@ -1818,7 +1840,7 @@ input:checked + .slider:before {
 
 <!-- Sidebar backdrop overlay (mobile only) -->
 <div id="sidebar-backdrop" onclick="closeMobileSidebar()" style="
-  display:none; position:fixed; inset:0; z-index:150;
+  display:none; position:fixed; top:0;left:0;right:0;bottom:0; z-index:150;
   background:rgba(0,0,0,0.5);
   opacity:0; transition: opacity 0.25s ease;
 "></div>
@@ -1839,7 +1861,7 @@ input:checked + .slider:before {
 
 <!-- Modal: Audio Player (Global) -->
 <div id="modal-audio-player" style="
-  display:none; position:fixed; inset:0; z-index:11000;
+  display:none; position:fixed; top:0;left:0;right:0;bottom:0; z-index:11000;
   background:rgba(0,0,0,0.92);
   flex-direction:column; align-items:center; justify-content:center;
   padding:16px;
@@ -1886,12 +1908,12 @@ input:checked + .slider:before {
       <div style="position:relative; width:90px; height:90px; margin:0 auto 14px;">
         <!-- Pulse ring (glow inside circle only) -->
         <div id="audio-pulse-ring" style="
-          position:absolute; inset:0; border-radius:50%;
+          position:absolute; top:0;left:0;right:0;bottom:0; border-radius:50%;
           background:transparent;
         "></div>
         <!-- Icon circle -->
         <div id="audio-icon-wrap" style="
-          position:absolute; inset:0; border-radius:50%;
+          position:absolute; top:0;left:0;right:0;bottom:0; border-radius:50%;
           background:linear-gradient(135deg,rgba(0,212,255,0.18),rgba(139,92,246,0.18));
           border:2px solid rgba(0,212,255,0.35);
           display:flex; align-items:center; justify-content:center;
@@ -2048,7 +2070,7 @@ onpointerleave="this.style.transform='translateY(-50%) scale(1)'; this.style.bac
   top:50%; right:54px;
   transform:translateY(-50%) translateX(calc(100% + 54px));
   transition:transform 0.25s ease-in-out;
-  width:min(58vw, 240px);
+  width:240px;width:min(58vw, 240px);
 ">
   <div style="
     background:rgba(12,12,28,0.97);
@@ -2126,7 +2148,7 @@ onpointerleave="this.style.transform='translateY(-50%) scale(1)'; this.style.bac
 
 <!-- Modal: PDF Viewer (Global — works for both student & admin) -->
 <div id="modal-pdf-viewer" style="
-  display:none; position:fixed; inset:0; z-index:9999;
+  display:none; position:fixed; top:0;left:0;right:0;bottom:0; z-index:9999;
   background:rgba(0,0,0,0.92);
   flex-direction:column; align-items:stretch; justify-content:flex-start;
   overflow:visible;
@@ -2231,7 +2253,7 @@ onpointerleave="this.style.transform='translateY(-50%) scale(1)'; this.style.bac
 
   <!-- Page selector modal -->
   <div id="pdf-page-selector" style="
-    display:none; position:fixed; inset:0; z-index:10002;
+    display:none; position:fixed; top:0;left:0;right:0;bottom:0; z-index:10002;
     background:rgba(0,0,0,0.7);
     align-items:center; justify-content:center;
   ">
@@ -2986,6 +3008,6 @@ onpointerleave="this.style.transform='translateY(-50%) scale(1)'; this.style.bac
 
 <!-- ATTENDANCE MANAGEMENT JAVASCRIPT -->
 
-  <script src="app.bundle.js" defer></script>
+  <script src="app.bundle.js"></script>
 </body>
 </html>

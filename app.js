@@ -2617,7 +2617,7 @@ function buildStudentDashboardHTML() {
           <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
             <div>
               <div style="font-family:'Rajdhani',sans-serif;font-weight:700;font-size:var(--fs-md);color:var(--text-white);margin-bottom:4px;">
-                🪪 Student ID Card
+                🆔 Student ID Card
               </div>
               <div style="font-size:var(--fs-sm);color:var(--text-muted);">View, download or share your digital ID card</div>
             </div>
@@ -2626,7 +2626,7 @@ function buildStudentDashboardHTML() {
                      border:none;border-radius:var(--radius-sm);color:#000;font-weight:700;
                      font-family:'Rajdhani',sans-serif;font-size:var(--fs-sm);cursor:pointer;
                      white-space:nowrap;-webkit-tap-highlight-color:transparent;">
-              🪪 View ID Card
+              🆔 View ID Card
             </button>
           </div>
         </div>
@@ -3181,7 +3181,7 @@ function buildStudentDashboardHTML() {
   </div><!-- end dashboard-area -->
 
   <!-- ── Student ID Card Modal ── -->
-  <div id="modal-id-card" class="modal-overlay" style="display:none;position:fixed;inset:0;z-index:9999;
+  <div id="modal-id-card" class="modal-overlay" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;z-index:9999;
        background:rgba(0,0,0,0.85);align-items:center;justify-content:center;padding:12px;box-sizing:border-box;overflow-y:auto;">
     <div style="width:100%;max-width:340px;position:relative;margin:auto;box-sizing:border-box;">
       <!-- Close -->
@@ -4491,7 +4491,7 @@ function viewProfilePhotoFullscreen() {
   const overlay = document.createElement('div');
   overlay.id = 'photo-fullscreen-overlay';
   overlay.style.cssText = [
-    'position:fixed','inset:0','z-index:9999',
+    'position:fixed','top:0;left:0;right:0;bottom:0','z-index:9999',
     'background:rgba(0,0,0,0.92)',
     'display:flex','flex-direction:column',
     'align-items:center','justify-content:center',
@@ -6152,7 +6152,7 @@ function buildAdminDashboardHTML() {
         </div>
 
         <!-- Date Mark All Modal (click on date header in Register) -->
-        <div id="att-date-mark-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:9999;align-items:center;justify-content:center;padding:16px;">
+        <div id="att-date-mark-modal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.75);z-index:9999;align-items:center;justify-content:center;padding:16px;">
           <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:24px;max-width:380px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
             <div style="font-family:'Rajdhani',sans-serif;font-size:var(--fs-lg);font-weight:700;color:var(--text-white);text-align:center;margin-bottom:14px;">Mark All Students</div>
             <!-- Date display — large and clear -->
@@ -6184,7 +6184,7 @@ function buildAdminDashboardHTML() {
         </div>
 
         <!-- PDF Export Modal -->
-        <div id="att-pdf-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9999;align-items:center;justify-content:center;padding:16px;">
+        <div id="att-pdf-modal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:9999;align-items:center;justify-content:center;padding:16px;">
           <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:24px;max-width:380px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
             <div style="text-align:center;margin-bottom:16px;">
               <div style="font-size:36px;margin-bottom:10px;">📄</div>
@@ -6205,7 +6205,7 @@ function buildAdminDashboardHTML() {
 
         <!-- Calendar Day Confirm Modal -->
         <!-- Day Status Modal (Calendar) -->
-        <div id="att-day-status-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:9999;align-items:center;justify-content:center;padding:16px;">
+        <div id="att-day-status-modal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.75);z-index:9999;align-items:center;justify-content:center;padding:16px;">
           <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:24px;max-width:380px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,0.5);">
             <div style="font-family:'Rajdhani',sans-serif;font-size:var(--fs-lg);font-weight:700;color:var(--text-white);margin-bottom:4px;text-align:center;">Set Day Status</div>
             <div style="background:var(--bg-card2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;text-align:center;margin:12px 0 16px;">
@@ -7027,7 +7027,7 @@ async function loadPendingStudents() {
                             margin-bottom:4px;">${s.name}</div>
                 <div style="font-size:var(--fs-xs); color:var(--neon-blue);
                             margin-bottom:6px; font-weight:600;">
-                  🪪 ${studentId}
+                  🆔 ${studentId}
                 </div>
                 <!-- Row 1: mobile, class, board, roll, registration date -->
                 <div style="display:flex; gap:8px; flex-wrap:wrap;
@@ -7928,7 +7928,7 @@ function viewStudentDetails(mobile) {
         `}
       </div>
       ${[
-        { icon:'🪪', label:'Student ID',      val: `<strong style="color:var(--neon-blue);">${student.studentId || student.id}</strong>` },
+        { icon:'🆔', label:'Student ID',      val: `<strong style="color:var(--neon-blue);">${student.studentId || student.id}</strong>` },
         { icon:'📅', label:'Session',         val: student.session || '—' },
         { icon:'📋', label:'Board',           val: student.board || 'BSEB' },
         { icon:'🎓', label:'Class',           val: getClassName(student.class) },
@@ -7984,7 +7984,7 @@ function adminViewPhotoFullscreen(src, studentName) {
   const overlay = document.createElement('div');
   overlay.id = 'admin-photo-fullscreen-overlay';
   overlay.style.cssText = [
-    'position:fixed','inset:0','z-index:9999',
+    'position:fixed','top:0;left:0;right:0;bottom:0','z-index:9999',
     'background:rgba(0,0,0,0.92)',
     'display:flex','flex-direction:column',
     'align-items:center','justify-content:center',
@@ -12270,7 +12270,7 @@ function attRenderCalendar(y,m){
 
     // Greyed out: before session or future
     if(bef||fut){
-      html+=`<div style="aspect-ratio:1;border-radius:var(--radius-sm);background:var(--bg-card2);opacity:0.25;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:13px;color:var(--text-dim);min-height:44px;">
+      html+=`<div style="width:36px;height:36px;aspect-ratio:1;border-radius:var(--radius-sm);background:var(--bg-card2);opacity:0.25;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:13px;color:var(--text-dim);min-height:44px;">
         <span style="font-weight:600;">${d}</span>
       </div>`;
       continue;
@@ -12288,7 +12288,7 @@ function attRenderCalendar(y,m){
     }
 
     html+=`<div onclick="attOpenDayStatus('${dk}')"
-      style="aspect-ratio:1;border-radius:var(--radius-sm);background:${bg};color:${col};
+      style="width:36px;height:36px;aspect-ratio:1;border-radius:var(--radius-sm);background:${bg};color:${col};
       border:2px solid ${isToday?'var(--neon-blue)':'transparent'};
       display:flex;flex-direction:column;align-items:center;justify-content:center;
       cursor:pointer;min-height:44px;transition:transform 0.1s;user-select:none;"
@@ -12745,9 +12745,9 @@ function sAttRenderCal(y,m,studentId){
   const cols={P:'#00ff88',A:'#ff4466',H:'#7a9bba',N:'#ffaa00'};
   for(let d=1;d<=total;d++){
     const dk=attDateKey(y,m,d),fut=dk>today,bef=psd&&dk<psd,isToday=dk===today;
-    if(fut||bef){html+=`<div style="aspect-ratio:1;border-radius:4px;background:var(--bg-card2);opacity:0.35;display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--text-dim);">${d}</div>`;continue;}
+    if(fut||bef){html+=`<div style="width:36px;height:36px;aspect-ratio:1;border-radius:4px;background:var(--bg-card2);opacity:0.35;display:flex;align-items:center;justify-content:center;font-size:12px;color:var(--text-dim);">${d}</div>`;continue;}
     const st=(Att.cache[dk]||{})[studentId]||'N';
-    html+=`<div style="aspect-ratio:1;border-radius:4px;background:${bgs[st]};color:${cols[st]};border:2px solid ${isToday?'var(--neon-blue)':'transparent'};display:flex;flex-direction:column;align-items:center;justify-content:center;-webkit-tap-highlight-color:transparent;">
+    html+=`<div style="width:36px;height:36px;aspect-ratio:1;border-radius:4px;background:${bgs[st]};color:${cols[st]};border:2px solid ${isToday?'var(--neon-blue)':'transparent'};display:flex;flex-direction:column;align-items:center;justify-content:center;-webkit-tap-highlight-color:transparent;">
       <span style="font-size:12px;font-weight:700;">${d}</span><span style="font-size:9px;margin-top:1px;">${icons[st]}</span></div>`;
   }
   html+='</div>';wrap.innerHTML=html;
@@ -13359,6 +13359,29 @@ window.addEventListener('online',()=>attSyncQ());
 // =============================================================
 // STUDENT ID CARD — Canvas-based futuristic digital ID
 // =============================================================
+// roundRect polyfill — ctx.roundRect not supported on old Android (Chrome < 99)
+// Uses manual path drawing as fallback
+function _roundRect(ctx, x, y, w, h, r) {
+  if (typeof r === 'number') r = [r, r, r, r];
+  else if (Array.isArray(r)) {
+    if (r.length === 1) r = [r[0], r[0], r[0], r[0]];
+    else if (r.length === 2) r = [r[0], r[1], r[0], r[1]];
+    else if (r.length === 3) r = [r[0], r[1], r[2], r[1]];
+  }
+  const [tl, tr, br, bl] = r;
+  ctx.beginPath();
+  ctx.moveTo(x + tl, y);
+  ctx.lineTo(x + w - tr, y);
+  ctx.arcTo(x + w, y, x + w, y + tr, tr);
+  ctx.lineTo(x + w, y + h - br);
+  ctx.arcTo(x + w, y + h, x + w - br, y + h, br);
+  ctx.lineTo(x + bl, y + h);
+  ctx.arcTo(x, y + h, x, y + h - bl, bl);
+  ctx.lineTo(x, y + tl);
+  ctx.arcTo(x, y, x + tl, y, tl);
+  ctx.closePath();
+}
+
 function showStudentIdCard(){
   const modal = document.getElementById('modal-id-card');
   if(!modal) return;
@@ -13425,17 +13448,17 @@ async function generateIdCard(skipPhoto = false){
   bg.addColorStop(0,   '#0a1628');
   bg.addColorStop(1,   '#060d1a');
   ctx.fillStyle = bg;
-  ctx.beginPath(); ctx.roundRect(0, 0, W, H, 14); ctx.fill();
+  _roundRect(ctx, 0, 0, W, H, 14); ctx.fill();
 
   // ── Top gradient bar ──
   const topBar = ctx.createLinearGradient(0, 0, W, 0);
   topBar.addColorStop(0, '#00d4ff'); topBar.addColorStop(0.5, '#7c3aed'); topBar.addColorStop(1, '#00d4ff');
   ctx.fillStyle = topBar;
-  ctx.beginPath(); ctx.roundRect(0, 0, W, 5, [14,14,0,0]); ctx.fill();
+  _roundRect(ctx, 0, 0, W, 5, [14,14,0,0]); ctx.fill();
 
   // ── Bottom gradient bar ──
   ctx.fillStyle = topBar;
-  ctx.beginPath(); ctx.roundRect(0, H-4, W, 4, [0,0,14,14]); ctx.fill();
+  _roundRect(ctx, 0, H-4, W, 4, [0,0,14,14]); ctx.fill();
 
   // ── Subtle glow top-right ──
   const glow = ctx.createRadialGradient(W, 0, 0, W, 0, 180);
@@ -13490,11 +13513,11 @@ async function generateIdCard(skipPhoto = false){
   // Glow border
   ctx.shadowColor='#00d4ff'; ctx.shadowBlur=12;
   ctx.strokeStyle='rgba(0,212,255,0.7)'; ctx.lineWidth=2;
-  ctx.beginPath(); ctx.roundRect(pX, pY, pW, pH, pR); ctx.stroke();
+  _roundRect(ctx, pX, pY, pW, pH, pR); ctx.stroke();
   ctx.shadowBlur=0;
   // Photo — skip if skipPhoto=true (avoids tainted canvas for share/download)
   ctx.save();
-  ctx.beginPath(); ctx.roundRect(pX, pY, pW, pH, pR); ctx.clip();
+  _roundRect(ctx, pX, pY, pW, pH, pR); ctx.clip();
   if(student.photo && !skipPhoto){
     try{
       const pImg = await loadImage(student.photo);
@@ -13536,7 +13559,7 @@ async function generateIdCard(skipPhoto = false){
     const vy = fy + lh*5 + 4;
     ctx.fillStyle = 'rgba(0,212,255,0.1)';
     ctx.strokeStyle = 'rgba(0,212,255,0.5)'; ctx.lineWidth=1;
-    ctx.beginPath(); ctx.roundRect(lx, vy, W-lx*2, 22, 5); ctx.fill(); ctx.stroke();
+    _roundRect(ctx, lx, vy, W-lx*2, 22, 5); ctx.fill(); ctx.stroke();
     ctx.fillStyle = '#00d4ff'; ctx.font = 'bold 11px Rajdhani, sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText(validTill, W/2, vy+15);
