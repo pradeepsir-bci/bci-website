@@ -1,0 +1,10 @@
+{
+  "name": "bci-website",
+  "version": "1.0.0",
+  "description": "BCI Website - Brilliant Coaching Institute",
+  "devDependencies": {
+    "@babel/cli": "^7.0.0",
+    "@babel/core": "^7.0.0",
+    "@babel/preset-env": "^7.0.0"
+  }
+}
