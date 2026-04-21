@@ -11530,11 +11530,16 @@ console.log('🎉 ALL PARTS LOADED — BCI Website is ready!');
 console.log('📋 Next step: Add your Firebase config keys (Part 1)');
 console.log('🌐 Then deploy to Netlify for free hosting');
 
-// Pre-initialize PDF.js worker at app load — saves ~50ms on first PDF open
-if (window.pdfjsLib) {
-  pdfjsLib.GlobalWorkerOptions.workerSrc =
-    'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-}
+// Pre-initialize PDF.js worker
+// Retry up to 3 times with 500ms delay — handles slow CDN on old Android
+(function _initPdfJs(attempt) {
+  if (window.pdfjsLib) {
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  } else if (attempt < 3) {
+    setTimeout(function() { _initPdfJs(attempt + 1); }, 500);
+  }
+})(0);
 
 
 
@@ -14202,8 +14207,15 @@ function openPdfViewer(url, title) {
   _pdfSetState('loading');
 
   if (!window.pdfjsLib) {
-    _pdfSetState('error', 'PDF viewer not loaded. Please refresh and try again.');
+    // pdfjsLib not ready yet — retry after 1 second (slow CDN on old Android)
+    showToast('Loading PDF viewer...', 'info', 2000);
+    setTimeout(function() { openPdfViewer(url, title); }, 1000);
     return;
+  }
+  // Ensure worker is initialized
+  if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   }
 
   // Streaming approach — PDF.js loads only what's needed per page

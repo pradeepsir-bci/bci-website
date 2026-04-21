@@ -1800,8 +1800,7 @@ input:checked + .slider:before {
 }
 
 </style>
-<!-- PDF.js — in-app PDF viewer -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<!-- PDF.js moved to end of body for correct load order -->
   <style>
     /* ============================================================
        COMPATIBILITY FALLBACKS — Old Android / Chrome < 84
@@ -3008,6 +3007,8 @@ onpointerleave="this.style.transform='translateY(-50%) scale(1)'; this.style.bac
 
 <!-- ATTENDANCE MANAGEMENT JAVASCRIPT -->
 
+  <!-- PDF.js must load BEFORE app.bundle.js -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <script src="app.bundle.js"></script>
 </body>
 </html>
