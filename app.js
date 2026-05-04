@@ -2601,7 +2601,7 @@ function buildStudentDashboardHTML() {
       <div id="s-page-home" class="page active">
 
         <!-- Welcome banner -->
-        <div style="
+        <div id="s-welcome-card" style="
           background: linear-gradient(135deg, var(--bg-card2), var(--bg-card3));
           border: 1px solid var(--border-bright);
           border-radius: var(--radius-lg);
@@ -2609,22 +2609,23 @@ function buildStudentDashboardHTML() {
           margin-bottom: 24px;
           position: relative; overflow: hidden;
           box-sizing: border-box; max-width: 100%;
+          transition: all 0.4s ease;
         ">
-          <!-- Glow effect -->
-          <div style="
+          <!-- Normal glow -->
+          <div id="s-welcome-glow" style="
             position:absolute; top:-40px; right:-40px;
             width:200px; height:200px; border-radius:50%;
             background: radial-gradient(circle, rgba(0,212,255,0.08) 0%, transparent 70%);
             pointer-events:none;
           "></div>
-          <div style="font-size:var(--fs-sm); color:var(--neon-blue);
+          <div id="s-welcome-tag" style="font-size:var(--fs-sm); color:var(--neon-blue);
                       font-weight:600; margin-bottom:8px;">
             🌟 Welcome back!
           </div>
-          <h1 style="font-size:var(--fs-2xl); margin-bottom:6px;">
+          <h1 id="s-welcome-title" style="font-size:var(--fs-2xl); margin-bottom:6px;">
             Namaste, <span style="color:var(--neon-blue);">${student.name.split(' ')[0]}</span>! 👋
           </h1>
-          <p style="color:var(--text-muted); font-size:var(--fs-base);">
+          <p id="s-welcome-msg" style="color:var(--text-muted); font-size:var(--fs-base);">
             Your study materials for <strong style="color:var(--text-white);">${className}</strong> are ready.
             Keep learning, keep growing!
           </p>
@@ -2665,8 +2666,8 @@ function buildStudentDashboardHTML() {
         <div id="s-rank-cards" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:24px;">
 
           <!-- Card 1: Latest Month Rank -->
-          <div style="background:linear-gradient(135deg,rgba(0,212,255,0.10),rgba(0,212,255,0.03));border:1.5px solid rgba(0,212,255,0.30);border-radius:var(--radius);padding:16px 12px;position:relative;overflow:hidden;">
-            <div style="position:absolute;right:-15px;top:-15px;width:70px;height:70px;border-radius:50%;background:rgba(0,212,255,0.07);pointer-events:none;"></div>
+          <div id="s-rank-month-card" style="background:linear-gradient(135deg,rgba(0,212,255,0.10),rgba(0,212,255,0.03));border:1.5px solid rgba(0,212,255,0.30);border-radius:var(--radius);padding:16px 12px;position:relative;overflow:hidden;">
+            <div id="s-rank-month-glow" style="position:absolute;right:-15px;top:-15px;width:70px;height:70px;border-radius:50%;background:rgba(0,212,255,0.07);pointer-events:none;"></div>
             <!-- Header -->
             <div style="font-size:11px;color:var(--neon-blue);font-weight:700;font-family:'Rajdhani',sans-serif;letter-spacing:0.8px;margin-bottom:2px;">📅 LATEST MONTH</div>
             <div id="s-rank-month-label" style="font-size:11px;color:var(--text-dim);margin-bottom:12px;min-height:14px;"></div>
@@ -2684,8 +2685,8 @@ function buildStudentDashboardHTML() {
           </div>
 
           <!-- Card 2: Overall Rank -->
-          <div style="background:linear-gradient(135deg,rgba(139,92,246,0.10),rgba(139,92,246,0.03));border:1.5px solid rgba(139,92,246,0.30);border-radius:var(--radius);padding:16px 12px;position:relative;overflow:hidden;">
-            <div style="position:absolute;right:-15px;top:-15px;width:70px;height:70px;border-radius:50%;background:rgba(139,92,246,0.07);pointer-events:none;"></div>
+          <div id="s-rank-overall-card" style="background:linear-gradient(135deg,rgba(139,92,246,0.10),rgba(139,92,246,0.03));border:1.5px solid rgba(139,92,246,0.30);border-radius:var(--radius);padding:16px 12px;position:relative;overflow:hidden;">
+            <div id="s-rank-overall-glow" style="position:absolute;right:-15px;top:-15px;width:70px;height:70px;border-radius:50%;background:rgba(139,92,246,0.07);pointer-events:none;"></div>
             <!-- Header -->
             <div style="font-size:11px;color:var(--purple);font-weight:700;font-family:'Rajdhani',sans-serif;letter-spacing:0.8px;margin-bottom:2px;">🌟 OVERALL</div>
             <div id="s-rank-overall-label" style="font-size:11px;color:var(--text-dim);margin-bottom:12px;min-height:14px;"></div>
@@ -2705,7 +2706,7 @@ function buildStudentDashboardHTML() {
         </div>
 
         <!-- My ID Card -->
-        <div class="card" style="margin-bottom:24px;background:linear-gradient(135deg,rgba(0,212,255,0.06),rgba(139,92,246,0.06));border:1px solid rgba(0,212,255,0.2);">
+        <div id="s-idcard-section" class="card" style="margin-bottom:24px;background:linear-gradient(135deg,rgba(0,212,255,0.06),rgba(139,92,246,0.06));border:1px solid rgba(0,212,255,0.2);">
           <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
             <div>
               <div style="font-family:'Rajdhani',sans-serif;font-weight:700;font-size:var(--fs-md);color:var(--text-white);margin-bottom:4px;">
@@ -3574,6 +3575,245 @@ async function initStudentDashboard() {
       : true;
     applyAttendanceFeatureToStudentNav(attEnabled);
   } catch(e) { /* fail open — leave nav enabled */ }
+
+  // Birthday check — runs after dashboard is ready
+  checkStudentBirthday();
+}
+
+// =============================================================
+// BIRTHDAY FEATURE
+// =============================================================
+function checkStudentBirthday() {
+  const student = AppState.currentUser;
+  if (!student || !student.dob) return;
+
+  // Local date use karo — system already IST mein hai
+  const ist = new Date();
+  const todayMM = String(ist.getMonth()+1).padStart(2,'0');
+  const todayDD = String(ist.getDate()).padStart(2,'0');
+  const todayKey = `${todayMM}-${todayDD}`; // e.g. "12-01"
+
+  // DOB format: "2012-12-01" → extract MM-DD
+  const dobParts = (student.dob||'').split('-');
+  if (dobParts.length < 3) return;
+  const dobKey = `${dobParts[1]}-${dobParts[2]}`; // "MM-DD"
+
+  if (todayKey !== dobKey) return; // not birthday
+
+  // It's birthday! Apply birthday mode to welcome card
+  applyBirthdayMode(student.name.split(' ')[0]);
+
+  // Check if modal already shown today
+  const shownKey = `bci_bday_modal_${todayMM}${todayDD}_${student.id||student.docId}`;
+  const alreadyShown = localStorage.getItem(shownKey);
+
+  if (!alreadyShown) {
+    // Show modal + confetti after small delay (let dashboard render first)
+    setTimeout(() => {
+      showBirthdayModal(student.name.split(' ')[0], shownKey);
+    }, 800);
+  }
+}
+
+function applyBirthdayMode(firstName) {
+  // ── GOLDEN THEME — student side only ──
+  // Inject a scoped style that overrides CSS vars inside #dashboard-area
+  if (!document.getElementById('bday-theme-style')) {
+    const s = document.createElement('style');
+    s.id = 'bday-theme-style';
+    s.textContent = `
+      #dashboard-area {
+        --neon-blue:       #ffd700;
+        --neon-blue-dim:   #cc9900;
+        --neon-glow:       0 0 10px #ffd700, 0 0 20px #ffd70044;
+        --neon-glow-strong:0 0 15px #ffd700, 0 0 40px #ffd70066;
+        --bg-dark:         #080600;
+        --bg-darker:       #040300;
+        --bg-card:         #110d00;
+        --bg-card2:        #1a1200;
+        --bg-card3:        #221800;
+        --border:          #5a3e00;
+        --border-bright:   #ffd70044;
+        --text-white:      #fff8e6;
+        --text-muted:      #b89a50;
+        --text-dim:        #7a6030;
+        --purple:          #ff9900;
+      }
+    `;
+    document.head.appendChild(s);
+  }
+  const card = document.getElementById('s-welcome-card');
+  const glow = document.getElementById('s-welcome-glow');
+  const tag  = document.getElementById('s-welcome-tag');
+  const title= document.getElementById('s-welcome-title');
+  const msg  = document.getElementById('s-welcome-msg');
+  if (!card) return;
+
+  // ── Rank cards — hardcoded colors override ──
+  const monthCard = document.getElementById('s-rank-month-card');
+  const overallCard = document.getElementById('s-rank-overall-card');
+  const monthGlow = document.getElementById('s-rank-month-glow');
+  const overallGlow = document.getElementById('s-rank-overall-glow');
+  if (monthCard) {
+    monthCard.style.background = 'linear-gradient(135deg,rgba(255,215,0,0.10),rgba(255,215,0,0.03))';
+    monthCard.style.border = '1.5px solid rgba(255,215,0,0.30)';
+  }
+  if (overallCard) {
+    overallCard.style.background = 'linear-gradient(135deg,rgba(255,153,0,0.10),rgba(255,153,0,0.03))';
+    overallCard.style.border = '1.5px solid rgba(255,153,0,0.30)';
+  }
+  if (monthGlow) monthGlow.style.background = 'rgba(255,215,0,0.07)';
+  if (overallGlow) overallGlow.style.background = 'rgba(255,153,0,0.07)';
+
+  // ── Student ID Card section ──
+  const idSection = document.getElementById('s-idcard-section');
+  if (idSection) {
+    idSection.style.background = 'linear-gradient(135deg,rgba(255,215,0,0.06),rgba(255,153,0,0.06))';
+    idSection.style.border = '1px solid rgba(255,215,0,0.2)';
+  }
+
+  // ── Maps link (hardcoded blue) → golden ──
+  const mapsLink = document.getElementById('s-link-maps');
+  if (mapsLink) {
+    mapsLink.style.background = 'rgba(255,215,0,0.06)';
+    mapsLink.style.border = '1px solid rgba(255,215,0,0.25)';
+    mapsLink.style.color = '#ffd700';
+    mapsLink.onmouseenter = () => mapsLink.style.background = 'rgba(255,215,0,0.12)';
+    mapsLink.onmouseleave = () => mapsLink.style.background = 'rgba(255,215,0,0.06)';
+  }
+  card.style.border = '1px solid rgba(255,215,0,0.35)';
+  // Golden top accent line
+  card.insertAdjacentHTML('afterbegin',
+    '<div style="position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,#ffd700,#ff9900,transparent);pointer-events:none;"></div>'
+  );
+  // Replace glow
+  if (glow) {
+    glow.style.background = 'radial-gradient(circle, rgba(255,215,0,0.10) 0%, transparent 70%)';
+  }
+  // Tag
+  if (tag) {
+    tag.style.color = '#ffd700';
+    tag.innerHTML = '🎂 Aaj Aapka Birthday Hai!';
+  }
+  // Title
+  if (title) {
+    const span = title.querySelector('span');
+    if (span) span.style.color = '#ffd700';
+    title.innerHTML = title.innerHTML.replace('👋','🎉');
+  }
+  // Message
+  if (msg) {
+    msg.style.color = 'rgba(255,230,150,0.8)';
+    msg.innerHTML = `Aaj aapka bahut special din hai.<br>
+      BCI family ki taraf se aapko dher saari<br>
+      shubhkamnayein! 🌟<br><br>
+      Padhte rahein, badhte rahein,<br>
+      aur apne sapne poore karein! 💪`;
+  }
+}
+
+function showBirthdayModal(firstName, shownKey) {
+  // Mark as shown
+  localStorage.setItem(shownKey, '1');
+
+  // Create overlay
+  const overlay = document.createElement('div');
+  overlay.id = 'bday-modal-overlay';
+  overlay.style.cssText = `
+    position:fixed; inset:0; z-index:99999;
+    background:rgba(0,0,0,0.82);
+    display:flex; align-items:center; justify-content:center;
+    padding:20px;
+  `;
+
+  // Confetti container
+  const confWrap = document.createElement('div');
+  confWrap.style.cssText = 'position:fixed;inset:0;pointer-events:none;overflow:hidden;z-index:100000;';
+  const confColors = ['#ffd700','#ff6b6b','#00d4ff','#a8ff78','#ff9ff3','#ff9f43','#54a0ff'];
+  for (let i = 0; i < 60; i++) {
+    const c = document.createElement('div');
+    const size = 5 + Math.random()*7;
+    c.style.cssText = `
+      position:absolute;
+      left:${Math.random()*100}%;
+      top:-12px;
+      width:${size}px; height:${size}px;
+      background:${confColors[Math.floor(Math.random()*confColors.length)]};
+      border-radius:${Math.random()>0.5?'50%':'2px'};
+      animation:bdayConfetti ${1.8+Math.random()*2.5}s linear ${Math.random()*2}s infinite;
+    `;
+    confWrap.appendChild(c);
+  }
+
+  // Modal box
+  overlay.innerHTML = `
+    <div style="
+      background: linear-gradient(135deg, #1a1200, #251800);
+      border: 1px solid rgba(255,215,0,0.4);
+      border-radius: 20px;
+      padding: 32px 24px;
+      text-align: center;
+      max-width: 320px;
+      width: 100%;
+      position: relative;
+      box-sizing: border-box;
+    ">
+      <div style="position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,#ffd700,#ff9900,transparent);border-radius:20px 20px 0 0;"></div>
+      <div style="font-size:11px;font-weight:700;letter-spacing:1px;color:rgba(255,215,0,0.7);margin-bottom:8px;">✦ HAPPY BIRTHDAY ✦</div>
+      <div style="font-size:52px;margin-bottom:8px;line-height:1;">🎂</div>
+      <div style="font-family:'Rajdhani',sans-serif;font-weight:700;font-size:22px;color:#ffd700;margin-bottom:12px;">
+        Happy Birthday, ${firstName}!
+      </div>
+      <div style="color:rgba(255,230,150,0.85);font-size:13px;line-height:1.8;margin-bottom:8px;">
+        Aaj aapka bahut special din hai.<br>
+        BCI family ki taraf se aapko dher saari<br>
+        shubhkamnayein! 🌟
+      </div>
+      <div style="color:rgba(255,230,150,0.7);font-size:13px;line-height:1.8;margin-bottom:20px;">
+        Padhte rahein, badhte rahein,<br>
+        aur apne sapne poore karein! 💪
+      </div>
+      <div style="font-size:11px;color:rgba(255,215,0,0.4);margin-bottom:18px;">— BCI Buxar 🏫</div>
+      <button onclick="closeBirthdayModal()" style="
+        background: linear-gradient(135deg, #ffd700, #ff9900);
+        color: #1a0800;
+        border: none;
+        border-radius: 10px;
+        padding: 12px 32px;
+        font-size:14px;
+        font-weight:700;
+        cursor:pointer;
+        font-family:'Rajdhani',sans-serif;
+        letter-spacing:0.5px;
+        width: 100%;
+      ">Shukriya! 🙏</button>
+    </div>
+  `;
+
+  // Add confetti keyframe
+  if (!document.getElementById('bday-style')) {
+    const style = document.createElement('style');
+    style.id = 'bday-style';
+    style.textContent = `
+      @keyframes bdayConfetti {
+        0%   { transform: translateY(-12px) rotate(0deg);   opacity: 1; }
+        100% { transform: translateY(110vh) rotate(720deg); opacity: 0; }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  document.body.appendChild(confWrap);
+  document.body.appendChild(overlay);
+  overlay._confWrap = confWrap;
+}
+
+function closeBirthdayModal() {
+  const overlay = document.getElementById('bday-modal-overlay');
+  if (overlay) {
+    if (overlay._confWrap) overlay._confWrap.remove();
+    overlay.remove();
+  }
 }
 
 
