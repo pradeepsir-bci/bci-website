@@ -61,10 +61,9 @@ const INSTITUTE_CONFIG = {
 // These are stored in Firebase — you can change from Settings panel
 // Default: admin1 / admin
 // =============================================================
-const DEFAULT_ADMIN = {
-  username: "admin1",
-  password: "admin"
-};
+// DEFAULT_ADMIN removed — credentials must be set in Firebase
+// Firestore: admin/credentials → { username: "...", password: "..." }
+const DEFAULT_ADMIN = null;
 
 // =============================================================
 // APP STATE — tracks current user session
@@ -162,6 +161,11 @@ window.addEventListener('popstate', (e) => {
   const pdfModal = document.getElementById('modal-pdf-viewer');
   if (pdfModal && pdfModal.style.display === 'flex') {
     closePdfViewer();
+    return;
+  }
+  // If pdfViewer state popped but modal already closed — just ignore it
+  // This prevents the re-open loop on old Android where popstate fires after close
+  if (e.state && e.state.pdfViewer) {
     return;
   }
   // If Audio player is open — back button closes it
@@ -434,9 +438,90 @@ async function writeSessionToken(isAdmin, userId) {
       await db.collection('admin').doc('activeSession').set({ token, deviceId, updatedAt: Date.now() });
     } else {
       await db.collection('students').doc(userId).update({ activeToken: token, activeDeviceId: deviceId, activeTokenAt: Date.now() });
+      trackLoginEvent(userId, deviceId); // ← weekly login tracking (silent, non-blocking)
     }
   } catch {}
   return token;
+}
+
+// =============================================================
+// WEEKLY LOGIN TRACKING
+// Tracks login count + unique device count per student per week
+// Used by admin Weekly Report tab to detect suspicious activity
+// =============================================================
+
+function getCurrentWeekInfo() {
+  const now = new Date();
+  // ISO week number calculation
+  const jan4 = new Date(now.getFullYear(), 0, 4);
+  const startOfWeek1 = new Date(jan4);
+  startOfWeek1.setDate(jan4.getDate() - ((jan4.getDay() + 6) % 7)); // Monday
+  const diff = now - startOfWeek1;
+  const weekNum = Math.floor(diff / (7 * 24 * 60 * 60 * 1000)) + 1;
+  const weekId = now.getFullYear() + '-' + String(weekNum).padStart(2, '0');
+
+  // Week start = Monday of current week
+  const dayOfWeek = (now.getDay() + 6) % 7; // 0=Mon, 6=Sun
+  const weekStart = new Date(now);
+  weekStart.setDate(now.getDate() - dayOfWeek);
+  const weekStartStr = weekStart.toISOString().slice(0, 10); // "YYYY-MM-DD"
+
+  return { weekId, weekStartStr };
+}
+
+async function trackLoginEvent(userId, deviceId) {
+  // Silent — never blocks login flow
+  try {
+    const student = AppState.currentUser;
+    if (!student) return;
+
+    const { weekId, weekStartStr } = getCurrentWeekInfo();
+    const docId = userId + '_' + weekId;
+    const ref = db.collection('loginLogs').doc(docId);
+
+    // Resolve class display name from Firestore classes collection
+    let studentClassName = student.class || '';
+    try {
+      if (student.class) {
+        const classDoc = await db.collection('classes').doc(student.class).get();
+        if (classDoc.exists) studentClassName = classDoc.data().name || student.class;
+      }
+    } catch(e) { /* use raw class id as fallback */ }
+
+    const snap = await ref.get();
+
+    if (!snap.exists) {
+      // First login this week — create fresh doc
+      await ref.set({
+        loginCount:   1,
+        deviceCount:  1,
+        devicesUsed:  [deviceId],
+        weekStart:    weekStartStr,
+        weekId:       weekId,
+        studentId:    userId,
+        studentName:  student.name  || '',
+        studentClass: studentClassName,
+        studentRoll:  String(student.roll || ''),
+        sessionId:    student.session || '',
+        board:        student.board  || 'BSEB',
+      });
+    } else {
+      const data = snap.data();
+      const devicesUsed = Array.isArray(data.devicesUsed) ? data.devicesUsed : [];
+      const isNewDevice = !devicesUsed.includes(deviceId);
+
+      const update = {
+        loginCount: (data.loginCount || 0) + 1,
+      };
+      if (isNewDevice) {
+        update.deviceCount = (data.deviceCount || 0) + 1;
+        update.devicesUsed = firebase.firestore.FieldValue.arrayUnion(deviceId);
+      }
+      await ref.update(update);
+    }
+  } catch(e) {
+    console.warn('[LoginTrack] Failed silently:', e);
+  }
 }
 
 async function clearSessionToken(isAdmin, userId) {
@@ -586,8 +671,10 @@ window.addEventListener('load', async () => {
   // the custom 11-min timeout, triggering an immediate expiry that left
   // the student on a blank blueish background screen.
   try {
-    // Timeout 5s — agar Firebase slow ho toh blank screen nahi dikhegi
-    const timeoutPromise = new Promise(resolve => setTimeout(resolve, 5000));
+    // Timeout: 3s on deployed (Netlify), 1s on local file:// 
+    const isLocal = location.protocol === 'file:';
+    const timeoutMs = isLocal ? 1000 : 3000;
+    const timeoutPromise = new Promise(resolve => setTimeout(resolve, timeoutMs));
     const fetchPromise   = db.collection('admin').doc('sessionTimeouts').get();
     const doc = await Promise.race([fetchPromise, timeoutPromise]);
     if (doc && doc.exists) {
@@ -1616,15 +1703,20 @@ async function handleAdminLogin() {
   document.getElementById('login-error').style.display = 'none';
 
   try {
-    // First try Firebase for admin credentials
-    let adminUser = DEFAULT_ADMIN; // fallback
+    // Fetch admin credentials from Firebase only — no hardcoded fallback
+    let adminUser = null;
     try {
       const adminDoc = await db.collection('admin').doc('credentials').get();
       if (adminDoc.exists) {
         adminUser = adminDoc.data();
       }
     } catch {
-      // Use default if Firebase not configured yet
+      // Firebase fetch failed
+    }
+
+    if (!adminUser) {
+      showLoginError('Could not connect to server. Please check your internet.');
+      return;
     }
 
     if (username === adminUser.username && password === adminUser.password) {
@@ -2318,7 +2410,7 @@ async function loadHomeNotices() {
       container.innerHTML += `
         <div class="notice-item ${n.importance || 'normal'}">
           <div class="notice-title">${n.title}</div>
-          <div class="notice-body" style="white-space:pre-line;">${n.message.replace(/\\n/g, "\n")}</div>
+          <div class="notice-body">${_noticeParseMarkdown(n.message || '')}</div>
           <div class="notice-footer">
             ${importanceLabel}
             <span class="notice-date">📅 ${formatDate(n.createdAt)}</span>
@@ -3613,6 +3705,226 @@ async function loadStudentNotices() {
 // BUILD NOTICE HTML (reusable)
 // importance: normal | important | urgent
 // =============================================================
+// =============================================================
+// NOTICE MARKDOWN PARSER
+// -------------------------------------------------------------
+// WHY: Plain text notices mein formatting nahi thi — admin ko
+// feature guides, bullet lists, bold headings likhne padte the
+// bina kisi visual structure ke. Students ke liye padhna mushkil.
+//
+// SUPPORTED SYNTAX (mobile pe bhi aasaan type karna):
+//   **text**      → Bold
+//   *text*        → Italic
+//   `text`        → Highlighted (inline code style)
+//   - item        → Bullet point
+//   1. item       → Numbered list
+//   [text](url)   → Clickable link
+//   ---           → Horizontal divider
+//   (blank line)  → Paragraph break
+//
+// PREVIEW MODE (showFull=false):
+//   Markdown tags strip ho jaate hain (plain text preview)
+//   Taaki 2-line clamp sahi kaam kare
+//
+// FULL MODE (showFull=true):
+//   Full HTML rendering with formatting
+// =============================================================
+
+// =============================================================
+// NOTICE TOOLBAR — Button click pe formatting insert karo
+// -------------------------------------------------------------
+// WHY: Manually ** ya * type karna inconvenient tha, especially
+// mobile pe. Yeh function selected text ko wrap karta hai ya
+// cursor pe syntax insert karta hai — MS Word style.
+//
+// textareaId — jis textarea mein insert karna hai
+// action     — 'bold' | 'italic' | 'highlight' | 'bullet' |
+//              'numbered' | 'divider'
+//
+// Selected text ho → wrap karo (bold/italic/highlight)
+// No selection → cursor pe insert karo
+// =============================================================
+// =============================================================
+// NOTICE LIVE PREVIEW
+// -------------------------------------------------------------
+// WHY: Admin ko pata nahi chalta tha ki formatted notice
+// students ko kaisi dikhegi — stars aur symbols hi dikhte the.
+// Ab type karte waqt real-time preview neeche dikhta hai.
+//
+// textareaId  — source textarea
+// previewId   — preview div id
+// wrapId      — wrapper div (hide/show)
+// =============================================================
+function _noticePreview(textareaId, previewId, wrapId) {
+  const ta      = document.getElementById(textareaId);
+  const preview = document.getElementById(previewId);
+  const wrap    = document.getElementById(wrapId);
+  if (!ta || !preview || !wrap) return;
+
+  const text = ta.value.trim();
+  if (!text) {
+    wrap.style.display = 'none';
+    return;
+  }
+  wrap.style.display = 'block';
+  preview.innerHTML  = _noticeParseMarkdown(ta.value);
+}
+
+function _noticeToolbar(textareaId, action) {
+  const ta = document.getElementById(textareaId);
+  if (!ta) return;
+
+  const start = ta.selectionStart;
+  const end   = ta.selectionEnd;
+  const sel   = ta.value.substring(start, end); // selected text (may be empty)
+  const before = ta.value.substring(0, start);
+  const after  = ta.value.substring(end);
+
+  let insert = '';
+  let cursorOffset = 0; // where to put cursor after insert
+
+  if (action === 'bold') {
+    if (sel) {
+      insert = '**' + sel + '**';
+      cursorOffset = insert.length;
+    } else {
+      insert = '****';
+      cursorOffset = 2; // cursor between ** **
+    }
+  } else if (action === 'italic') {
+    if (sel) {
+      insert = '*' + sel + '*';
+      cursorOffset = insert.length;
+    } else {
+      insert = '**';
+      cursorOffset = 1;
+    }
+  } else if (action === 'highlight') {
+    if (sel) {
+      insert = '`' + sel + '`';
+      cursorOffset = insert.length;
+    } else {
+      insert = '``';
+      cursorOffset = 1;
+    }
+  } else if (action === 'bullet') {
+    // Add bullet on new line
+    const needsNewline = before.length > 0 && !before.endsWith('\n');
+    insert = (needsNewline ? '\n' : '') + '- ';
+    cursorOffset = insert.length;
+  } else if (action === 'numbered') {
+    const needsNewline = before.length > 0 && !before.endsWith('\n');
+    insert = (needsNewline ? '\n' : '') + '1. ';
+    cursorOffset = insert.length;
+  } else if (action === 'divider') {
+    const needsNewline = before.length > 0 && !before.endsWith('\n');
+    insert = (needsNewline ? '\n' : '') + '---\n';
+    cursorOffset = insert.length;
+  }
+
+  // Insert text
+  ta.value = before + insert + after;
+
+  // Set cursor position
+  const newPos = start + cursorOffset;
+  ta.setSelectionRange(newPos, newPos);
+  ta.focus();
+}
+
+function _noticeParseMarkdown(text) {
+  // Normalize line endings + unescape stored \n
+  let t = text.replace(/\\n/g, '\n');
+
+  // Split into lines for block-level processing
+  const lines = t.split('\n');
+  let html = '';
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i];
+
+    // --- Horizontal rule ---
+    if (/^---+$/.test(line.trim())) {
+      html += '<hr style="border:none;border-top:1px solid var(--border);margin:8px 0;">';
+      i++; continue;
+    }
+
+    // --- Bullet list: collect consecutive "- " lines ---
+    if (/^- /.test(line)) {
+      html += '<ul style="margin:4px 0 4px 16px;padding:0;">';
+      while (i < lines.length && /^- /.test(lines[i])) {
+        html += '<li style="margin:2px 0;">' + _noticeInline(lines[i].slice(2)) + '</li>';
+        i++;
+      }
+      html += '</ul>';
+      continue;
+    }
+
+    // --- Numbered list: collect consecutive "N. " lines ---
+    if (/^\d+\. /.test(line)) {
+      html += '<ol style="margin:4px 0 4px 16px;padding:0;">';
+      while (i < lines.length && /^\d+\. /.test(lines[i])) {
+        const content = lines[i].replace(/^\d+\. /, '');
+        html += '<li style="margin:2px 0;">' + _noticeInline(content) + '</li>';
+        i++;
+      }
+      html += '</ol>';
+      continue;
+    }
+
+    // --- Empty line → paragraph break ---
+    if (line.trim() === '') {
+      html += '<br>';
+      i++; continue;
+    }
+
+    // --- Normal line with inline formatting ---
+    html += '<span>' + _noticeInline(line) + '</span><br>';
+    i++;
+  }
+
+  return html;
+}
+
+function _noticeInline(text) {
+  // Security: escape HTML special chars first to prevent XSS
+  // Only then apply our controlled markdown tags
+  let t = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+
+  // [text](url) → clickable link (opens in new tab)
+  t = t.replace(/\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g,
+    '<a href="$2" target="_blank" rel="noopener" style="color:var(--neon-blue);text-decoration:underline;">$1</a>');
+
+  // **bold**
+  t = t.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+
+  // *italic* (single asterisk, not double)
+  t = t.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+
+  // `inline code` → highlighted
+  t = t.replace(/`([^`]+)`/g,
+    '<span style="background:var(--bg-card2);color:var(--neon-blue);padding:1px 5px;border-radius:3px;font-family:monospace;font-size:0.92em;">$1</span>');
+
+  return t;
+}
+
+function _noticeStripMarkdown(text) {
+  // For preview (2-line clamp) — strip all markdown syntax → plain text
+  return text
+    .replace(/\\n/g, ' ')
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/\*([^*]+)\*/g, '$1')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1')
+    .replace(/^- /gm, '')
+    .replace(/^\d+\. /gm, '')
+    .replace(/^---+$/gm, '')
+    .replace(/\n/g, ' ');
+}
+
 function buildNoticeHTML(n, showFull = false) {
   const labels = {
     normal:    '<span class="badge badge-blue">📌 Notice</span>',
@@ -3624,6 +3936,12 @@ function buildNoticeHTML(n, showFull = false) {
   // On notices page (showFull=true) → not clickable, shows full text
   const clickable = !showFull;
 
+  // Preview: strip markdown → plain text for 2-line clamp
+  // Full view: render markdown → formatted HTML
+  const bodyContent = showFull
+    ? _noticeParseMarkdown(n.message || '')
+    : _noticeStripMarkdown(n.message || '');
+
   return `
     <div class="notice-item ${n.importance || 'normal'}" style="margin-bottom:12px;
          ${clickable ? 'cursor:pointer; transition:border-color 0.2s, transform 0.15s;' : ''}"
@@ -3631,8 +3949,8 @@ function buildNoticeHTML(n, showFull = false) {
                        onmouseenter="this.style.transform='translateY(-2px)'"
                        onmouseleave="this.style.transform=''"` : ''}>
       <div class="notice-title">${n.title}</div>
-      <div class="notice-body" style="${!showFull ? 'display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;' : 'white-space:pre-line;'}">
-        ${n.message.replace(/\\n/g, '\n')}
+      <div class="notice-body" style="${!showFull ? 'display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;' : ''}">
+        ${bodyContent}
       </div>
       <div class="notice-footer">
         ${labels[n.importance || 'normal']}
@@ -3687,11 +4005,11 @@ async function loadStudentRecentMaterials() {
   const container = document.getElementById('s-recent-materials');
   if (!container) return;
   const classId = AppState.currentUser.class;
-  
-  // Show loading state
+
   container.innerHTML = '<div class="loading-screen"><div class="spinner"></div><p>Loading materials...</p></div>';
-  
+
   try {
+    // Fetch more than needed to account for locked ones after filter
     const snap = await db.collection('materials')
       .where('classId', '==', classId)
       .where('isLocked', '==', false)
@@ -3709,16 +4027,42 @@ async function loadStudentRecentMaterials() {
       return;
     }
 
-    // Filter out files whose parent folder is locked
-    const allMaterials = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    const visibleMaterials = [];
-    for (const material of allMaterials) {
-      const parentLocked = await isFolderOrParentLocked(material.folderId);
-      if (!parentLocked) {
-        visibleMaterials.push(material);
-      }
+    // Sort by date first — take top 30 candidates only
+    // (30 gives enough buffer even if many are locked, without fetching everything)
+    const allMaterials = snap.docs
+      .map(doc => ({ id: doc.id, ...doc.data() }))
+      .sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0))
+      .slice(0, 30);
+
+    // Folder lock cache — stores Promises to avoid race condition in Promise.all
+    const _folderLockCache = {};
+    function isFolderLockedCached(folderId) {
+      if (!folderId || folderId === 'root') return Promise.resolve(false);
+      if (folderId in _folderLockCache) return _folderLockCache[folderId];
+      // Store the Promise immediately — so parallel calls reuse same Promise
+      _folderLockCache[folderId] = (async () => {
+        try {
+          const fdoc = await db.collection('folders').doc(folderId).get();
+          if (!fdoc.exists) return false;
+          const data = fdoc.data();
+          // Exact same logic as original isFolderOrParentLocked:
+          if (data.isLocked === true) return true;
+          if (data.parentFolderId) return await isFolderLockedCached(data.parentFolderId);
+          return false;
+        } catch { return false; }
+      })();
+      return _folderLockCache[folderId];
     }
-    
+
+    // Parallel lock checks — all at once instead of one by one
+    const lockResults = await Promise.all(
+      allMaterials.map(m => isFolderLockedCached(m.folderId))
+    );
+
+    const visibleMaterials = allMaterials
+      .filter((_, i) => !lockResults[i])
+      .slice(0, 5); // take top 5 visible
+
     if (visibleMaterials.length === 0) {
       container.innerHTML = `
         <div style="padding:24px; text-align:center; color:var(--text-muted);">
@@ -3730,40 +4074,36 @@ async function loadStudentRecentMaterials() {
         </div>`;
       return;
     }
-    
-    // ⚠️ FIX 3: Sort and take latest 3 only
-    const sorted = visibleMaterials
-      .sort((a, b) => {
-        const aTime = a.createdAt?.seconds || 0;
-        const bTime = b.createdAt?.seconds || 0;
-        return bTime - aTime;
-      })
-      .slice(0, 3);
 
-    // Build folder name map for the materials' folderIds
-    const folderIds = [...new Set(sorted.map(m => m.folderId).filter(id => id && id !== 'root'))];
+    // Fetch folder names in parallel
+    const folderIds = [...new Set(visibleMaterials.map(m => m.folderId).filter(id => id && id !== 'root'))];
     const folderNames = {};
-    if(folderIds.length){
+    if (folderIds.length) {
       await Promise.all(folderIds.map(async fid => {
-        try{
+        try {
+          // Use cache if already fetched above
           const fdoc = await db.collection('folders').doc(fid).get();
-          if(fdoc.exists) folderNames[fid] = fdoc.data().name || '';
-        }catch{}
+          if (fdoc.exists) folderNames[fid] = fdoc.data().name || '';
+        } catch {}
       }));
     }
 
     // ⚠️ FIX 3: Notification-style cards that navigate to Study Materials
     const typeIcons = {
-      'Notes': '📝',
-      'Assignment': '📋',
-      'DPP': '📊',
-      'Paper': '📄',
-      'Syllabus': '📑'
+      'Notes':              '📄',
+      'Assignment':         '📝',
+      'DPP':                '📋',
+      'Previous Year Paper':'📜',
+      'Syllabus':           '📑',
+      'Video':              '🎥',
+      'Audio':              '🎵',
+      'Image':              '🖼️',
+      'Other':              '📌',
     };
     
     container.innerHTML = `
       <div style="display:flex; flex-direction:column; gap:10px;">
-        ${sorted.map(m => {
+        ${visibleMaterials.map(m => {
           const folderName = (m.folderId && m.folderId !== 'root' && folderNames[m.folderId])
             ? folderNames[m.folderId] : null;
           return `
@@ -4654,7 +4994,7 @@ async function saveEditedProfile() {
           await _batch.commit();
         }
       }
-    } catch(_ne) { /* notification save failed silently — don't block profile save */ }
+    } catch(_ne) { console.error('[Notification Save Error]', _ne); /* don't block profile save */ }
     // ───────────────────────────────────────────────────────
 
     Object.assign(AppState.currentUser, updateData);
@@ -6342,45 +6682,144 @@ function buildAdminDashboardHTML() {
       ================================================== -->
       <div id="a-page-notifications" class="page" style="padding-bottom:24px;">
         <div class="page-header">
-          <h1 class="page-title">🔔 Student Edit Notifications</h1>
+          <h1 class="page-title">🔔 Notifications</h1>
         </div>
 
-        <!-- Filters -->
-        <div style="display:flex; flex-wrap:wrap; gap:10px; margin-bottom:16px; align-items:center;">
-          <!-- Time filter -->
-          <div style="display:flex; gap:6px;">
-            <button id="notif-filter-all" onclick="notifSetFilter('all')"
-              class="btn btn-sm btn-primary" style="font-size:12px;">All</button>
-            <button id="notif-filter-today" onclick="notifSetFilter('today')"
-              class="btn btn-sm btn-ghost" style="font-size:12px;">Today</button>
-            <button id="notif-filter-month" onclick="notifSetFilter('month')"
-              class="btn btn-sm btn-ghost" style="font-size:12px;">This Month</button>
-          </div>
-          <!-- Class filter -->
-          <select id="notif-filter-class" onchange="notifApplyFilters()"
-            style="background:var(--bg-card2);border:1px solid var(--border);
-            color:var(--text-white);border-radius:var(--radius-sm);
-            padding:6px 10px;font-size:12px;cursor:pointer;">
-            <option value="all">All Classes</option>
-            <option value="6">Class 6</option>
-            <option value="7">Class 7</option>
-            <option value="8">Class 8</option>
-            <option value="9">Class 9</option>
-            <option value="10">Class 10</option>
-          </select>
-          <!-- Mark all read -->
-          <button onclick="notifMarkAllRead()"
-            class="btn btn-sm btn-ghost" style="font-size:12px; margin-left:auto;">
-            ✅ Mark All Read
-          </button>
+        <!-- ── Main Tabs ── -->
+        <div style="display:flex;gap:6px;margin-bottom:18px;border-bottom:1px solid var(--border);padding-bottom:10px;">
+          <button id="ntab-edits" onclick="_nSwitchTab('edits')"
+            class="btn btn-sm btn-primary" style="font-size:12px;">🔔 Edit Notifications</button>
+          <button id="ntab-weekly" onclick="_nSwitchTab('weekly')"
+            class="btn btn-sm btn-ghost" style="font-size:12px;">📊 Weekly Report</button>
         </div>
 
-        <!-- Notification list -->
-        <div id="notif-list" style="display:flex; flex-direction:column; gap:10px;">
-          <div style="text-align:center; color:var(--text-dim); padding:40px 0;">
-            Loading notifications...
+        <!-- ══════════ TAB 1: Edit Notifications ══════════ -->
+        <div id="ntab-edits-panel">
+          <!-- Filters -->
+          <div style="display:flex; flex-wrap:wrap; gap:10px; margin-bottom:16px; align-items:center;">
+            <div style="display:flex; gap:6px;">
+              <button id="notif-filter-all" onclick="notifSetFilter('all')"
+                class="btn btn-sm btn-primary" style="font-size:12px;">All</button>
+              <button id="notif-filter-today" onclick="notifSetFilter('today')"
+                class="btn btn-sm btn-ghost" style="font-size:12px;">Today</button>
+              <button id="notif-filter-month" onclick="notifSetFilter('month')"
+                class="btn btn-sm btn-ghost" style="font-size:12px;">This Month</button>
+            </div>
+            <select id="notif-filter-class" onchange="notifApplyFilters()"
+              style="background:var(--bg-card2);border:1px solid var(--border);
+              color:var(--text-white);border-radius:var(--radius-sm);
+              padding:6px 10px;font-size:12px;cursor:pointer;">
+              <option value="all">All Classes</option>
+              <option value="6">Class 6</option>
+              <option value="7">Class 7</option>
+              <option value="8">Class 8</option>
+              <option value="9">Class 9</option>
+              <option value="10">Class 10</option>
+            </select>
+            <button onclick="notifMarkAllRead()"
+              class="btn btn-sm btn-ghost" style="font-size:12px; margin-left:auto;">
+              ✅ Mark All Read
+            </button>
+          </div>
+          <div id="notif-list" style="display:flex; flex-direction:column; gap:10px;">
+            <div style="text-align:center; color:var(--text-dim); padding:40px 0;">
+              Loading notifications...
+            </div>
           </div>
         </div>
+
+        <!-- ══════════ TAB 2: Weekly Login Report ══════════ -->
+        <div id="ntab-weekly-panel" style="display:none;">
+
+          <!-- Week navigation — single line -->
+          <div style="display:flex;align-items:center;justify-content:space-between;
+                      gap:8px;margin-bottom:12px;">
+            <button id="wlr-prev-btn" onclick="_wlrNav('prev')"
+              class="btn btn-sm btn-ghost"
+              style="font-size:12px;white-space:nowrap;flex-shrink:0;">← Prev</button>
+
+            <span id="wlr-week-label"
+              style="font-size:13px;color:var(--text-white);font-weight:600;
+                     text-align:center;flex:1;">
+            </span>
+
+            <button id="wlr-next-btn" onclick="_wlrNav('next')"
+              class="btn btn-sm btn-ghost"
+              style="font-size:12px;white-space:nowrap;flex-shrink:0;">Next →</button>
+
+            <!-- Refresh button — top right -->
+            <button onclick="loadWeeklyReport(_wlrWeekId)"
+              title="Refresh"
+              class="btn btn-sm btn-ghost"
+              style="font-size:13px;padding:5px 8px;flex-shrink:0;">↺</button>
+          </div>
+
+          <!-- Filter + Sort — two filter dropdowns + sort -->
+          <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
+
+            <!-- Type filter dropdown -->
+            <div style="position:relative;min-width:140px;">
+              <select id="wlr-filter-select"
+                onchange="_wlrSetFilter(this.value)"
+                style="width:100%;appearance:none;-webkit-appearance:none;
+                       background:var(--bg-card2);border:1px solid var(--border);
+                       color:var(--text-white);border-radius:var(--radius-sm);
+                       padding:8px 32px 8px 12px;font-size:13px;cursor:pointer;
+                       outline:none;">
+                <option value="all">👥 All Students</option>
+                <option value="suspicious">🚩 Suspicious</option>
+              </select>
+              <span style="position:absolute;right:10px;top:50%;transform:translateY(-50%);
+                           color:var(--text-dim);pointer-events:none;font-size:11px;">▼</span>
+            </div>
+
+            <!-- Class filter dropdown -->
+            <div style="position:relative;min-width:140px;">
+              <select id="wlr-class-select"
+                onchange="_wlrSetClassFilter(this.value)"
+                style="width:100%;appearance:none;-webkit-appearance:none;
+                       background:var(--bg-card2);border:1px solid var(--border);
+                       color:var(--text-white);border-radius:var(--radius-sm);
+                       padding:8px 32px 8px 12px;font-size:13px;cursor:pointer;
+                       outline:none;">
+                <option value="all">🏫 All Classes</option>
+                <!-- Dynamically loaded from Firestore -->
+              </select>
+              <span style="position:absolute;right:10px;top:50%;transform:translateY(-50%);
+                           color:var(--text-dim);pointer-events:none;font-size:11px;">▼</span>
+            </div>
+
+            <!-- Sort dropdown -->
+            <div style="position:relative;min-width:140px;">
+              <select id="wlr-sort-select"
+                onchange="_wlrSetSort(this.value)"
+                style="width:100%;appearance:none;-webkit-appearance:none;
+                       background:var(--bg-card2);border:1px solid var(--border);
+                       color:var(--text-white);border-radius:var(--radius-sm);
+                       padding:8px 32px 8px 12px;font-size:13px;cursor:pointer;
+                       outline:none;">
+                <option value="login">↓ Login Count</option>
+                <option value="device">↓ Device Count</option>
+                <option value="combined">↓ Combined</option>
+              </select>
+              <span style="position:absolute;right:10px;top:50%;transform:translateY(-50%);
+                           color:var(--text-dim);pointer-events:none;font-size:11px;">▼</span>
+            </div>
+
+          </div>
+
+          <!-- Hidden div kept for Firestore class loading -->
+          <div id="wlr-class-filters" style="display:none;"></div>
+
+          <!-- Data container -->
+          <div id="wlr-container">
+            <div style="text-align:center;color:var(--text-dim);padding:40px 0;">
+              Select week to load report.
+            </div>
+          </div>
+
+        </div><!-- end weekly panel -->
+
       </div><!-- end a-page-notifications -->
 
     </main><!-- end admin main-content -->
@@ -6467,7 +6906,50 @@ function buildAdminDashboardHTML() {
         <label>Message <span class="required">*</span></label>
         <textarea class="form-control" id="notice-message"
                   placeholder="Write the full announcement here..."
+                  oninput="_noticePreview('notice-message','notice-preview','notice-preview-wrap')"
                   rows="5"></textarea>
+        <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;margin-bottom:2px;">
+          <button type="button" onclick="_noticeToolbar('notice-message','bold')"
+            style="padding:4px 10px;background:var(--bg-card2);border:1px solid var(--border);
+                   border-radius:4px;color:var(--text-white);font-size:12px;cursor:pointer;font-weight:bold;">
+            B
+          </button>
+          <button type="button" onclick="_noticeToolbar('notice-message','italic')"
+            style="padding:4px 10px;background:var(--bg-card2);border:1px solid var(--border);
+                   border-radius:4px;color:var(--text-white);font-size:12px;cursor:pointer;font-style:italic;">
+            I
+          </button>
+          <button type="button" onclick="_noticeToolbar('notice-message','highlight')"
+            style="padding:4px 10px;background:var(--bg-card2);border:1px solid var(--border);
+                   border-radius:4px;color:var(--neon-blue);font-size:12px;cursor:pointer;font-family:monospace;">
+            H
+          </button>
+          <button type="button" onclick="_noticeToolbar('notice-message','bullet')"
+            style="padding:4px 10px;background:var(--bg-card2);border:1px solid var(--border);
+                   border-radius:4px;color:var(--text-white);font-size:12px;cursor:pointer;">
+            • List
+          </button>
+          <button type="button" onclick="_noticeToolbar('notice-message','numbered')"
+            style="padding:4px 10px;background:var(--bg-card2);border:1px solid var(--border);
+                   border-radius:4px;color:var(--text-white);font-size:12px;cursor:pointer;">
+            1. List
+          </button>
+          <button type="button" onclick="_noticeToolbar('notice-message','divider')"
+            style="padding:4px 10px;background:var(--bg-card2);border:1px solid var(--border);
+                   border-radius:4px;color:var(--text-dim);font-size:12px;cursor:pointer;">
+            ─ Line
+          </button>
+        </div>
+        <!-- Live Preview Panel -->
+        <div id="notice-preview-wrap" style="display:none;margin-top:8px;">
+          <div style="font-size:11px;color:var(--text-dim);margin-bottom:4px;">👁 Preview:</div>
+          <div id="notice-preview"
+               style="background:var(--bg-card2);border:1px solid var(--border);
+                      border-radius:var(--radius-sm);padding:10px 12px;
+                      font-size:13px;line-height:1.7;min-height:40px;
+                      color:var(--text-white);">
+          </div>
+        </div>
       </div>
       <div class="form-group">
         <label>Importance Level</label>
@@ -6557,7 +7039,51 @@ function buildAdminDashboardHTML() {
       </div>
       <div class="form-group">
         <label>Message <span class="required">*</span></label>
-        <textarea class="form-control" id="edit-notice-message" rows="5"></textarea>
+        <textarea class="form-control" id="edit-notice-message"
+                  oninput="_noticePreview('edit-notice-message','edit-notice-preview','edit-notice-preview-wrap')"
+                  rows="5"></textarea>
+        <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;margin-bottom:2px;">
+          <button type="button" onclick="_noticeToolbar('edit-notice-message','bold')"
+            style="padding:4px 10px;background:var(--bg-card2);border:1px solid var(--border);
+                   border-radius:4px;color:var(--text-white);font-size:12px;cursor:pointer;font-weight:bold;">
+            B
+          </button>
+          <button type="button" onclick="_noticeToolbar('edit-notice-message','italic')"
+            style="padding:4px 10px;background:var(--bg-card2);border:1px solid var(--border);
+                   border-radius:4px;color:var(--text-white);font-size:12px;cursor:pointer;font-style:italic;">
+            I
+          </button>
+          <button type="button" onclick="_noticeToolbar('edit-notice-message','highlight')"
+            style="padding:4px 10px;background:var(--bg-card2);border:1px solid var(--border);
+                   border-radius:4px;color:var(--neon-blue);font-size:12px;cursor:pointer;font-family:monospace;">
+            H
+          </button>
+          <button type="button" onclick="_noticeToolbar('edit-notice-message','bullet')"
+            style="padding:4px 10px;background:var(--bg-card2);border:1px solid var(--border);
+                   border-radius:4px;color:var(--text-white);font-size:12px;cursor:pointer;">
+            • List
+          </button>
+          <button type="button" onclick="_noticeToolbar('edit-notice-message','numbered')"
+            style="padding:4px 10px;background:var(--bg-card2);border:1px solid var(--border);
+                   border-radius:4px;color:var(--text-white);font-size:12px;cursor:pointer;">
+            1. List
+          </button>
+          <button type="button" onclick="_noticeToolbar('edit-notice-message','divider')"
+            style="padding:4px 10px;background:var(--bg-card2);border:1px solid var(--border);
+                   border-radius:4px;color:var(--text-dim);font-size:12px;cursor:pointer;">
+            ─ Line
+          </button>
+        </div>
+        <!-- Live Preview Panel -->
+        <div id="edit-notice-preview-wrap" style="display:none;margin-top:8px;">
+          <div style="font-size:11px;color:var(--text-dim);margin-bottom:4px;">👁 Preview:</div>
+          <div id="edit-notice-preview"
+               style="background:var(--bg-card2);border:1px solid var(--border);
+                      border-radius:var(--radius-sm);padding:10px 12px;
+                      font-size:13px;line-height:1.7;min-height:40px;
+                      color:var(--text-white);">
+          </div>
+        </div>
       </div>
       <div class="form-group">
         <label>Importance Level</label>
@@ -7635,6 +8161,12 @@ function printStudentList() {
     const matchG  = genders.length  === 0 || genders.includes(s.gender);
     const matchSt = statuses.length === 0 || statuses.includes(s.status);
     return matchQ && matchB && matchSe && matchC && matchG && matchSt;
+  }).sort((a, b) => {
+    // Same sort as All Students table: Class DESC (10→9→8) + Roll ASC (1,2,3...)
+    const getClassNum = s => { const m = getClassName(s.class).match(/(\d+)/); return m ? parseInt(m[1]) : 0; };
+    const classA = getClassNum(a), classB = getClassNum(b);
+    if (classA !== classB) return classB - classA;
+    return (parseInt(a.roll) || 999) - (parseInt(b.roll) || 999);
   });
 
   if (students.length === 0) {
@@ -7666,7 +8198,7 @@ function printStudentList() {
       <td>${s.altMobile || '—'}</td>
       <td>${s.father || '—'}</td>
       <td>${s.mother || '—'}</td>
-      <td>${s.address || '—'}</td>
+      <td class="addr-cell">${s.address || '—'}</td>
       <td>${s.session || '—'}</td>
       <td>${s.status}</td>
     </tr>
@@ -7679,18 +8211,33 @@ function printStudentList() {
   <title>BCI Student List</title>
   <style>
     * { margin:0; padding:0; box-sizing:border-box; }
-    body { font-family: Arial, sans-serif; font-size: 8px; color: #000; background: #fff; }
-    .header { text-align:center; border-bottom: 2px solid #000; padding-bottom: 8px; margin-bottom: 10px; }
-    .header h1 { font-size: 16px; font-weight: bold; letter-spacing: 1px; }
-    .header h2 { font-size: 11px; font-weight: normal; margin-top: 2px; }
-    .meta { display:flex; justify-content:space-between; font-size:8px; margin-bottom:8px; }
+    body { font-family: Arial, sans-serif; font-size: 7.5px; color: #000; background: #fff; }
+    .header { text-align:center; border-bottom: 2px solid #000; padding-bottom: 6px; margin-bottom: 8px; }
+    .header h1 { font-size: 14px; font-weight: bold; letter-spacing: 0.5px; }
+    .header h2 { font-size: 9px; font-weight: normal; margin-top: 2px; color:#333; }
+    .meta { display:flex; justify-content:space-between; font-size:7.5px; margin-bottom:6px; }
     .meta span { font-weight: bold; }
-    table { width:100%; border-collapse: collapse; }
-    th { background: #000; color: #fff; padding: 4px 3px; text-align:left; font-size:7px; text-transform:uppercase; letter-spacing:0.3px; }
-    td { padding: 3px; border-bottom: 1px solid #ccc; font-size:7.5px; vertical-align:top; word-break:break-word; }
-    tr:nth-child(even) td { background: #f5f5f5; }
-    .footer { margin-top:12px; text-align:center; font-size:7px; color:#555; border-top:1px solid #ccc; padding-top:6px; }
-    @page { size: A4 landscape; margin: 10mm; }
+    table { width:100%; border-collapse: collapse; table-layout: fixed; }
+    col.c-no     { width: 2%; }
+    col.c-board  { width: 4%; }
+    col.c-class  { width: 5%; }
+    col.c-roll   { width: 3%; }
+    col.c-name   { width: 8%; }
+    col.c-gender { width: 4%; }
+    col.c-dob    { width: 6%; }
+    col.c-mob    { width: 6.5%; }
+    col.c-altmob { width: 5%; }
+    col.c-father { width: 10%; }
+    col.c-mother { width: 8%; }
+    col.c-addr   { width: 12%; }
+    col.c-sess   { width: 6%; }
+    col.c-status { width: 5.5%; }
+    td.addr-cell { white-space: normal; word-break: break-word; line-height: 1.4; }
+    th { background: #222; color: #fff; padding: 4px 2px; text-align:left; font-size:7px; text-transform:uppercase; letter-spacing:0.3px; word-break:break-word; }
+    td { padding: 3px 2px; border-bottom: 1px solid #ddd; font-size:7.5px; vertical-align:top; word-break:break-word; white-space:normal; }
+    tr:nth-child(even) td { background: #f7f7f7; }
+    .footer { margin-top:10px; text-align:center; font-size:7px; color:#666; border-top:1px solid #ccc; padding-top:5px; }
+    @page { size: A4 landscape; margin: 6mm 8mm; }
     @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
   </style>
 </head>
@@ -7705,6 +8252,12 @@ function printStudentList() {
     <div>Printed on: <span>${dateStr}</span></div>
   </div>
   <table>
+    <colgroup>
+      <col class="c-no"><col class="c-board"><col class="c-class"><col class="c-roll">
+      <col class="c-name"><col class="c-gender"><col class="c-dob">
+      <col class="c-mob"><col class="c-altmob"><col class="c-father">
+      <col class="c-mother"><col class="c-addr"><col class="c-sess"><col class="c-status">
+    </colgroup>
     <thead>
       <tr>
         <th>#</th><th>Board</th><th>Class</th><th>Roll</th>
@@ -8774,7 +9327,7 @@ async function loadAdminNotices() {
               </div>
             </div>
           </div>
-          <div class="notice-body" style="margin-top:8px;white-space:pre-line;">${n.message}</div>
+          <div class="notice-body" style="margin-top:8px;">${_noticeParseMarkdown(n.message || '')}</div>
           <div class="notice-footer" style="margin-top:10px;">
             ${importanceLabel[n.importance || 'normal']}
             <span class="notice-date">📅 ${formatDate(n.createdAt)}</span>
@@ -9017,6 +9570,8 @@ function openEditNoticeModal(id, title, message, importance, showOnHome, showOnD
   document.getElementById('edit-notice-title').value      = title;
   document.getElementById('edit-notice-message').value    = message.replace(/\\n/g, '\n');
   document.getElementById('edit-notice-importance').value = importance;
+  // Auto-show preview with existing content
+  _noticePreview('edit-notice-message', 'edit-notice-preview', 'edit-notice-preview-wrap');
 
   // Pre-fill visibility — default true if field doesn't exist (old notices)
   const home = showOnHome !== false;
@@ -11534,10 +12089,20 @@ console.log('🌐 Then deploy to Netlify for free hosting');
 // Retry up to 3 times with 500ms delay — handles slow CDN on old Android
 (function _initPdfJs(attempt) {
   if (window.pdfjsLib) {
-    pdfjsLib.GlobalWorkerOptions.workerSrc =
-      'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-  } else if (attempt < 3) {
-    setTimeout(function() { _initPdfJs(attempt + 1); }, 500);
+    try {
+      pdfjsLib.GlobalWorkerOptions.workerSrc =
+        'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      // Test CDN reachability silently without console error
+      fetch('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js',
+        { method: 'HEAD', mode: 'no-cors' }
+      ).catch(function() {
+        pdfjsLib.GlobalWorkerOptions.workerSrc = '';
+      });
+    } catch(e) {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = ''; // fallback: run on main thread
+    }
+  } else if (attempt < 5) {
+    setTimeout(function() { _initPdfJs(attempt + 1); }, 600);
   }
 })(0);
 
@@ -14182,6 +14747,16 @@ function _pdfResumeCleanup() {
 }
 
 function openPdfViewer(url, title) {
+  // Cancel any previously pending load — safety for rapid open/close on old Android
+  if (window._pdfLoadingTask) {
+    try { window._pdfLoadingTask.destroy(); } catch(e) {}
+    window._pdfLoadingTask = null;
+  }
+
+  // Reset fallback flag on every new open — ensures each PDF gets a fresh attempt
+  // Edge case: user opens PDF A (2.16 used) → without closing, opens PDF B
+  window._pdfFallbackUsed = false;
+
   _pdfUrl  = url;
   _pdfPage = 1;
   _pdfDoc  = null;
@@ -14206,32 +14781,81 @@ function openPdfViewer(url, title) {
   // Show loading, hide others
   _pdfSetState('loading');
 
+  // pdfjsLib not ready — track retry count to avoid infinite loop
   if (!window.pdfjsLib) {
-    // pdfjsLib not ready yet — retry after 1 second (slow CDN on old Android)
+    window._pdfRetryCount = (window._pdfRetryCount || 0) + 1;
+    if (window._pdfRetryCount > 5) {
+      // Give up after 5 retries (~5 seconds)
+      window._pdfRetryCount = 0;
+      _pdfSetState('error', 'PDF viewer could not load. Please check your internet and refresh the page.');
+      return;
+    }
     showToast('Loading PDF viewer...', 'info', 2000);
-    setTimeout(function() { openPdfViewer(url, title); }, 1000);
+    window._pdfRetryTimeout = setTimeout(function() {
+      // Only retry if modal is still open (user hasn't closed it)
+      var modal = document.getElementById('modal-pdf-viewer');
+      if (modal && modal.style.display === 'flex') {
+        openPdfViewer(url, title);
+      }
+    }, 1000);
     return;
   }
-  // Ensure worker is initialized
-  if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
+  window._pdfRetryCount = 0; // reset on success
+
+  // =============================================================
+  // OLD ANDROID DETECTION (version-based hint only)
+  // WHY: Android < 8 or Chrome < 70 = known PDF.js 3.x issues.
+  // NOTE: This is a conservative hint — the real safety net is the
+  // runtime fallback in the .catch() below, which handles edge cases
+  // like MIUI Browser (reports Chrome/71 but different engine).
+  // =============================================================
+  var _isOldAndroid = (function() {
+    var ua = navigator.userAgent;
+    if (ua.indexOf('Android') === -1) return false;
+    var androidMatch = ua.match(/Android (\d+)/);
+    var androidVer = androidMatch ? parseInt(androidMatch[1]) : 10;
+    var chromeMatch = ua.match(/Chrome\/(\d+)/);
+    var chromeVer = chromeMatch ? parseInt(chromeMatch[1]) : 100;
+    return androidVer < 8 || chromeVer < 70;
+  })();
+
+  // Worker setup — old Android runs on main thread (safer, slower)
+  if (_isOldAndroid) {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = '';
+  } else if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
     pdfjsLib.GlobalWorkerOptions.workerSrc =
       'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   }
 
-  // Streaming approach — PDF.js loads only what's needed per page
-  // rangeChunkSize: 256KB chunks — fewer round trips, faster for small+medium files
-  // disableStream: false — enables progressive loading
-  // disableAutoFetch: true — disable background prefetch (reduces unnecessary requests)
-  // getDocument() called ONCE per file open (friend's rule ✅)
-  // URL never opened directly in browser — PDF.js handles internally (no download popup ✅)
-  pdfjsLib.getDocument({
-    url: url,
-    rangeChunkSize: 262144,
-    disableStream: false,
-    disableAutoFetch: true,  // faster initial load — pages fetched on demand only
-    withCredentials: false
-  }).promise
+  // Timeout — slow internet / large file → show error (does NOT trigger 2.16 fallback)
+  // Bilingual message only shown when BOTH 3.x AND 2.16 fail (see _bothFailedMsg below)
+  window._pdfLoadTimeout = setTimeout(function() {
+    var modal = document.getElementById('modal-pdf-viewer');
+    if (!_pdfDoc && modal && modal.style.display === 'flex') {
+      _pdfSetState('error', 'PDF is taking too long to load. Please check your internet connection and try again.');
+    }
+  }, _isOldAndroid ? 20000 : 30000);
+
+  // getDocument config — safe mode for old Android, fast mode for modern
+  var _getDocConfig = _isOldAndroid ? {
+    url: url, rangeChunkSize: 32768,
+    disableStream: true, disableAutoFetch: true,
+    withCredentials: false, isEvalSupported: false,
+  } : {
+    url: url, rangeChunkSize: 65536,
+    disableStream: false, disableAutoFetch: true,
+    withCredentials: false,
+  };
+
+  // Store task so closePdfViewer() can cancel it mid-load
+  window._pdfLoadingTask = pdfjsLib.getDocument(_getDocConfig);
+
+  window._pdfLoadingTask.promise
     .then(function(pdf) {
+      clearTimeout(window._pdfLoadTimeout);
+      window._pdfLoadTimeout = null;
+      var modal = document.getElementById('modal-pdf-viewer');
+      if (!modal || modal.style.display !== 'flex') return;
       _pdfDoc = pdf;
 
       // Resume last viewed page (safe — fallback to 1 on any issue)
@@ -14241,16 +14865,170 @@ function openPdfViewer(url, title) {
       _pdfUpdatePageUI();
       _pdfSetState('canvas');
       _pdfInitTouchHandlers();
+      // Single RAF — double RAF caused delay on old Android
       requestAnimationFrame(function() {
-        requestAnimationFrame(function() {
-          _pdfResetZoom();
-          _pdfRenderPage(_pdfPage);
-        });
+        _pdfResetZoom();
+        _pdfRenderPage(_pdfPage);
       });
     })
     .catch(function(err) {
+      clearTimeout(window._pdfLoadTimeout);
+      window._pdfLoadTimeout = null;
+      var modal = document.getElementById('modal-pdf-viewer');
+      if (!modal || modal.style.display !== 'flex') return;
       console.error('[PDF Viewer] Error:', err);
-      _pdfSetState('error', 'Failed to load file. Try downloading it instead.');
+
+      var msg = 'Failed to load PDF.';
+      if (err && err.message && err.message.indexOf('fetch') > -1) {
+        msg = 'Network error. Check your internet connection and try again.';
+      } else if (err && err.name === 'MissingPDFException') {
+        msg = 'PDF file not found. Please contact admin.';
+      }
+
+      // =============================================================
+      // PDF.js 2.16 RUNTIME FALLBACK
+      // -------------------------------------------------------------
+      // WHY: Some Android browsers (MIUI, old WebView, Chrome 71-79)
+      // silently fail PDF.js 3.x — getDocument() crashes internally
+      // even though pdfjsLib loaded. Version checks alone can't catch
+      // these cases (MIUI reports Chrome/71 but different engine).
+      //
+      // HOW: When getDocument() throws/rejects (not slow internet —
+      // that's handled by the 30s timeout above), we dynamically load
+      // PDF.js 2.x (pure ES5 — works on Chrome 49+, Android 4.4+).
+      // PDF.js 2.x uses the SAME API (getDocument, getPage, render)
+      // so ALL our viewer features (zoom, pan, page nav, download)
+      // work exactly the same — just slower rendering.
+      //
+      // WHAT WE DON'T SWITCH ON:
+      //   - Slow internet / large file → timeout shows error (user retries)
+      //   - CORS / MissingPDF errors → real errors, not compatibility issues
+      //
+      // Modern devices: 3.x succeeds → .catch never runs → unaffected ✅
+      // =============================================================
+
+      // Only attempt fallback for non-network, non-missing errors
+      // (those are real errors, not compatibility issues)
+      var isRealError = (err && err.name === 'MissingPDFException') ||
+                        (err && err.message && err.message.indexOf('fetch') > -1) ||
+                        (err && err.message && err.message.indexOf('network') > -1);
+
+      if (!isRealError && !window._pdfFallbackUsed) {
+        window._pdfFallbackUsed = true;
+        console.warn('[PDF Viewer] PDF.js 3.x failed — loading PDF.js 2.16 fallback...');
+        _pdfSetState('loading');
+
+        var s = document.createElement('script');
+        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js';
+
+        // =============================================================
+        // BILINGUAL ERROR MESSAGE — shown when BOTH 3.x AND 2.16 fail
+        // WHY bilingual: BCI students are Hindi-medium — English alone
+        // may confuse them. Hindi + English makes it clear what to do.
+        // =============================================================
+        var _bothFailedMsg =
+          'PDF kisi technical karan nahi khul pa raha hai.\n' +
+          'Neeche Download button dabao, PDF download karo,\n' +
+          'aur apne mobile ke PDF reader mein kholo.\n\n' +
+          'PDF could not open due to a technical issue.\n' +
+          'Please download the PDF and open it\n' +
+          'with your mobile\'s PDF reader.';
+
+        // Safety timeout: 2.16 CDN didn't respond in 15s
+        // Ensures loading screen never gets stuck waiting for 2.16 script
+        window._pdfFallbackTimeout = setTimeout(function() {
+          window._pdfFallbackTimeout = null;
+          var m = document.getElementById('modal-pdf-viewer');
+          if (!m || m.style.display !== 'flex') return;
+          _pdfSetState('error', _bothFailedMsg);
+        }, 15000);
+
+        s.onload = function() {
+          clearTimeout(window._pdfFallbackTimeout);
+          window._pdfFallbackTimeout = null;
+
+          var m = document.getElementById('modal-pdf-viewer');
+          if (!m || m.style.display !== 'flex') return;
+
+          if (typeof pdfjsLib === 'undefined') {
+            _pdfSetState('error', _bothFailedMsg);
+            return;
+          }
+
+          pdfjsLib.GlobalWorkerOptions.workerSrc = ''; // main thread — safer for old devices
+          console.log('[PDF Viewer] PDF.js 2.16 loaded — retrying PDF...');
+
+          var task = pdfjsLib.getDocument({
+            url: url,
+            rangeChunkSize: 32768,
+            disableStream: true,
+            disableAutoFetch: true,
+            withCredentials: false,
+            isEvalSupported: false,
+          });
+          window._pdfLoadingTask = task;
+
+          // =============================================================
+          // 2.16 getDocument() SAFETY TIMEOUT
+          // WHY: This was the missing stuck point — if 2.16 getDocument()
+          // hangs (slow internet, device memory issue), loading screen
+          // would be stuck forever. This timeout guarantees it resolves.
+          // 25s chosen: gives enough time for slow connections but won't
+          // leave user stuck longer than needed.
+          // =============================================================
+          window._pdf216Timeout = setTimeout(function() {
+            window._pdf216Timeout = null;
+            if (window._pdfLoadingTask) {
+              try { window._pdfLoadingTask.destroy(); } catch(e) {}
+              window._pdfLoadingTask = null;
+            }
+            var m2 = document.getElementById('modal-pdf-viewer');
+            if (!m2 || m2.style.display !== 'flex') return;
+            _pdfDoc = null;
+            _pdfSetState('error', _bothFailedMsg);
+          }, 25000);
+
+          task.promise.then(function(pdf) {
+            clearTimeout(window._pdf216Timeout);
+            window._pdf216Timeout = null;
+            clearTimeout(window._pdfLoadTimeout); // clear main timeout too
+            window._pdfLoadTimeout = null;
+            var m2 = document.getElementById('modal-pdf-viewer');
+            if (!m2 || m2.style.display !== 'flex') return;
+            _pdfDoc = pdf;
+            var resumePage = _pdfResumeLoad(url, pdf.numPages);
+            _pdfPage = resumePage;
+            _pdfUpdatePageUI();
+            _pdfSetState('canvas');
+            _pdfInitTouchHandlers();
+            requestAnimationFrame(function() {
+              _pdfResetZoom();
+              _pdfRenderPage(_pdfPage);
+            });
+          }).catch(function(err2) {
+            clearTimeout(window._pdf216Timeout);
+            window._pdf216Timeout = null;
+            var m2 = document.getElementById('modal-pdf-viewer');
+            if (!m2 || m2.style.display !== 'flex') return;
+            console.error('[PDF Viewer] PDF.js 2.16 also failed:', err2);
+            _pdfSetState('error', _bothFailedMsg);
+          });
+        };
+
+        s.onerror = function() {
+          clearTimeout(window._pdfFallbackTimeout);
+          window._pdfFallbackTimeout = null;
+          var m = document.getElementById('modal-pdf-viewer');
+          if (!m || m.style.display !== 'flex') return;
+          _pdfSetState('error', _bothFailedMsg);
+        };
+
+        document.head.appendChild(s);
+        return;
+      }
+
+      // Real error (network/missing) or 2.16 already tried — show appropriate message
+      _pdfSetState('error', msg + ' Try downloading instead.');
     });
 }
 
@@ -14269,13 +15047,26 @@ function _pdfSetState(state, msg) {
 // ── Central page update — keeps all UI in sync ───────────────
 function _pdfUpdatePageUI() {
   if (!_pdfDoc) return;
+  const total = _pdfDoc.numPages;
+  // Top bar page info
   const info = document.getElementById('pdf-page-info');
-  if (info) info.textContent = 'Page ' + _pdfPage + ' / ' + _pdfDoc.numPages;
-  // Dim prev/next arrows at boundaries
+  if (info) info.textContent = 'Page ' + _pdfPage + ' / ' + total;
+  // Bottom center page count
+  const bottomPage = document.getElementById('pdf-bottom-page');
+  if (bottomPage) bottomPage.textContent = _pdfPage + ' / ' + total;
+  // Prev/next disabled state + border color feedback
   const prev = document.getElementById('pdf-btn-prev');
   const next = document.getElementById('pdf-btn-next');
-  if (prev) prev.style.opacity = _pdfPage <= 1 ? '0.3' : '1';
-  if (next) next.style.opacity = _pdfPage >= _pdfDoc.numPages ? '0.3' : '1';
+  if (prev) {
+    prev.style.opacity     = _pdfPage <= 1 ? '0.3' : '1';
+    prev.style.cursor      = _pdfPage <= 1 ? 'not-allowed' : 'pointer';
+    prev.style.borderColor = _pdfPage <= 1 ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.2)';
+  }
+  if (next) {
+    next.style.opacity     = _pdfPage >= total ? '0.3' : '1';
+    next.style.cursor      = _pdfPage >= total ? 'not-allowed' : 'pointer';
+    next.style.borderColor = _pdfPage >= total ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.2)';
+  }
 }
 
 function _pdfRenderPage(pageNum) {
@@ -14287,16 +15078,24 @@ function _pdfRenderPage(pageNum) {
     if (!canvas) { _pdfRendering = false; return; } // safety — canvas missing
     const ctx    = canvas.getContext('2d');
 
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    // Cap DPR at 1 for old Android — prevents canvas memory crash
+    // Modern phones (devicePixelRatio >= 2) get sharper render
+    var dpr = Math.min(window.devicePixelRatio || 1, 2);
+    if (dpr > 1 && navigator.userAgent.indexOf('Android') > -1) {
+      // Check Android version — old Android (< 8) cap at 1
+      var androidMatch = navigator.userAgent.match(/Android (\d+)/);
+      var androidVer = androidMatch ? parseInt(androidMatch[1]) : 10;
+      if (androidVer < 8) dpr = 1; // old Android — no high DPR render
+    }
 
     const modal  = document.getElementById('modal-pdf-viewer');
     const freshW = modal ? modal.clientWidth : window.innerWidth;
     const maxW   = Math.min(freshW - 16, 900);
     const baseVP = page.getViewport({ scale: 1 });
 
-    const fitScale    = maxW / baseVP.width;
-    const MIN_SCALE   = 1.5;
-    const renderScale = Math.max(fitScale, MIN_SCALE) * dpr;
+    const fitScale     = maxW / baseVP.width;
+    const MIN_SCALE    = dpr < 2 ? 1.0 : 1.5; // lower min scale for old phones
+    const renderScale  = Math.max(fitScale, MIN_SCALE) * dpr;
     const displayScale = fitScale;
 
     const viewport = page.getViewport({ scale: renderScale });
@@ -14492,14 +15291,45 @@ function closePdfViewer() {
   modal.style.display = 'none';
   document.body.style.overflow = '';
 
+  // Reset retry state — prevent retry loop after close
+  window._pdfRetryCount = 0;
+  if (window._pdfRetryTimeout) {
+    clearTimeout(window._pdfRetryTimeout);
+    window._pdfRetryTimeout = null;
+  }
+  // Clear load timeout — prevents .then() rendering after close
+  if (window._pdfLoadTimeout) {
+    clearTimeout(window._pdfLoadTimeout);
+    window._pdfLoadTimeout = null;
+  }
+
+  // Clear 2.16 fallback loading timeout — user may close during fallback load
+  if (window._pdfFallbackTimeout) {
+    clearTimeout(window._pdfFallbackTimeout);
+    window._pdfFallbackTimeout = null;
+  }
+
+  // Clear 2.16 getDocument() safety timeout
+  if (window._pdf216Timeout) {
+    clearTimeout(window._pdf216Timeout);
+    window._pdf216Timeout = null;
+  }
+
   // Cancel any in-progress zoom re-render
   if (_pdfActiveRenderTask) {
     try { _pdfActiveRenderTask.cancel(); } catch(e) {}
     _pdfActiveRenderTask = null;
   }
-  clearTimeout(_pdfZoomRenderTimer);
 
-  _pdfDoc       = null;
+  // Cancel in-progress PDF load — prevents .then() firing after close
+  // Critical for old Android where getDocument() hangs then resolves late
+  if (window._pdfLoadingTask) {
+    try { window._pdfLoadingTask.destroy(); } catch(e) {}
+    window._pdfLoadingTask = null;
+  }
+  // Reset fallback flag — so next PDF open can try 3.x again
+  // (or use 2.16 if 3.x fails again on same device)
+  window._pdfFallbackUsed = false;
   _pdfUrl       = '';
   _pdfPage      = 1;
   _pdfZoom      = 1;
@@ -15440,8 +16270,17 @@ async function loadAdminNotifications() {
     // Update badge count (unread)
     _notifUpdateBadge();
   } catch(e) {
-    _notifLoaded = false; // keep false so filters don't overwrite error message
-    listEl.innerHTML = '<div style="text-align:center;color:var(--danger);padding:40px 0;">Failed to load notifications.</div>';
+    _notifLoaded = false;
+    console.error('[Notifications] Load failed:', e);
+    // If collection doesn't exist yet — show empty state (not error)
+    if (e && e.code === 'permission-denied') {
+      listEl.innerHTML = '<div style="text-align:center;color:var(--text-dim);padding:40px 0;">Permission denied. Check Firestore rules.</div>';
+    } else {
+      // Likely empty collection — show no notifications instead of error
+      _notifAll = [];
+      _notifLoaded = true;
+      notifApplyFilters(); // will show "No notifications found"
+    }
   }
 }
 
@@ -15677,6 +16516,279 @@ window.addEventListener('load', _pwaApplyState);
     patchNavFn('showAdminPage');
   });
 })();
+
+// =============================================================
+// NOTIFICATION PAGE — TAB SWITCHER
+// =============================================================
+function _nSwitchTab(tab) {
+  const editsPanel  = document.getElementById('ntab-edits-panel');
+  const weeklyPanel = document.getElementById('ntab-weekly-panel');
+  const editsBtn    = document.getElementById('ntab-edits');
+  const weeklyBtn   = document.getElementById('ntab-weekly');
+  if (!editsPanel || !weeklyPanel) return;
+
+  if (tab === 'edits') {
+    editsPanel.style.display  = '';
+    weeklyPanel.style.display = 'none';
+    if (editsBtn)  editsBtn.className  = 'btn btn-sm btn-primary';
+    if (weeklyBtn) weeklyBtn.className = 'btn btn-sm btn-ghost';
+  } else {
+    editsPanel.style.display  = 'none';
+    weeklyPanel.style.display = '';
+    if (editsBtn)  editsBtn.className  = 'btn btn-sm btn-ghost';
+    if (weeklyBtn) weeklyBtn.className = 'btn btn-sm btn-primary';
+    // Load current week if not already loaded
+    if (!_wlrWeekId) {
+      loadWeeklyReport(null); // null = current week
+    }
+  }
+}
+
+function _wlrNav(direction) {
+  if (!_wlrWeekId) return;
+  const newWeekId = direction === 'prev'
+    ? _wlrPrevWeekId(_wlrWeekId)
+    : _wlrNextWeekId(_wlrWeekId);
+  loadWeeklyReport(newWeekId);
+}
+
+// =============================================================
+// WEEKLY LOGIN REPORT — ADMIN PANEL
+// Loads loginLogs for a given weekId, renders sortable table
+// =============================================================
+
+let _wlrWeekId      = null;   // currently displayed weekId
+let _wlrData        = [];     // loaded records for current week
+let _wlrFilter      = 'all';  // 'all' | 'suspicious'
+let _wlrClassFilter = 'all';  // 'all' | class name string
+let _wlrSort        = 'login'; // 'login' | 'device' | 'combined'
+
+function _wlrGetCurrentWeekId() {
+  return getCurrentWeekInfo().weekId;
+}
+
+function _wlrWeekLabel(weekId) {
+  // weekId = "2026-17" → show Mon–Sun dates
+  if (!weekId) return '';
+  const [year, week] = weekId.split('-').map(Number);
+  // ISO week to date: Jan 4 is always in week 1
+  const jan4 = new Date(year, 0, 4);
+  const startOfWeek1 = new Date(jan4);
+  startOfWeek1.setDate(jan4.getDate() - ((jan4.getDay() + 6) % 7));
+  const monday = new Date(startOfWeek1);
+  monday.setDate(startOfWeek1.getDate() + (week - 1) * 7);
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  const fmt = d => d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  return fmt(monday) + ' – ' + fmt(sunday);
+}
+
+function _wlrPrevWeekId(weekId) {
+  const [year, week] = weekId.split('-').map(Number);
+  if (week === 1) return (year - 1) + '-52';
+  return year + '-' + String(week - 1).padStart(2, '0');
+}
+
+function _wlrNextWeekId(weekId) {
+  const [year, week] = weekId.split('-').map(Number);
+  if (week >= 52) return (year + 1) + '-01';
+  return year + '-' + String(week + 1).padStart(2, '0');
+}
+
+async function loadWeeklyReport(weekId) {
+  _wlrWeekId = weekId || _wlrGetCurrentWeekId();
+
+  const container = document.getElementById('wlr-container');
+  if (!container) return;
+  container.innerHTML = '<div style="text-align:center;color:var(--text-dim);padding:40px 0;">Loading...</div>';
+
+  // Load class options into class filter dropdown dynamically from Firestore (only once)
+  const classSel = document.getElementById('wlr-class-select');
+  if (classSel && classSel.options.length <= 1) {
+    try {
+      const classSnap = await db.collection('classes').orderBy('order').get();
+      classSnap.docs.forEach(d => {
+        const data   = d.data();
+        const isCBSE = data.board === 'CBSE';
+        const label  = isCBSE ? `[CBSE] ${data.name}` : data.name;
+        const val    = isCBSE ? `CBSE_${data.name}` : data.name;
+        const opt    = document.createElement('option');
+        opt.value    = val;
+        opt.textContent = label;
+        classSel.appendChild(opt);
+      });
+    } catch(e) { /* silent */ }
+  }
+
+  try {
+    const snap = await db.collection('loginLogs')
+      .where('weekId', '==', _wlrWeekId)
+      .get();
+
+    _wlrData = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    _wlrRender();
+  } catch(e) {
+    console.error('[WeeklyReport] Load failed:', e);
+    container.innerHTML = '<div style="text-align:center;color:var(--danger);padding:40px 0;">Failed to load. Check internet.</div>';
+  }
+}
+
+function _wlrSetFilter(f) {
+  _wlrFilter = f;
+  const sel = document.getElementById('wlr-filter-select');
+  if (sel) sel.value = f;
+  _wlrRender();
+}
+
+function _wlrSetClassFilter(c) {
+  _wlrClassFilter = c;
+  const sel = document.getElementById('wlr-class-select');
+  if (sel) sel.value = c;
+  _wlrRender();
+}
+
+function _wlrSetSort(s) {
+  _wlrSort = s;
+  const sel = document.getElementById('wlr-sort-select');
+  if (sel) sel.value = s;
+  _wlrRender();
+}
+
+function _wlrRender() {
+  const container = document.getElementById('wlr-container');
+  if (!container) return;
+
+  // Update week label + nav buttons
+  const label = document.getElementById('wlr-week-label');
+  if (label) label.textContent = _wlrWeekLabel(_wlrWeekId);
+  const currentWeekId = _wlrGetCurrentWeekId();
+  const nextBtn = document.getElementById('wlr-next-btn');
+  if (nextBtn) nextBtn.disabled = (_wlrWeekId === currentWeekId);
+
+  if (!_wlrData.length) {
+    container.innerHTML = '<div style="text-align:center;color:var(--text-dim);padding:40px 0;">No login data for this week.</div>';
+    return;
+  }
+
+  // Compute averages
+  const avgLogin  = _wlrData.reduce((s, r) => s + (r.loginCount  || 0), 0) / _wlrData.length;
+  const avgDevice = _wlrData.reduce((s, r) => s + (r.deviceCount || 0), 0) / _wlrData.length;
+
+  // Filter — type filter + class filter combined
+  let filtered = _wlrData.filter(r => {
+    // Type filter
+    if (_wlrFilter === 'suspicious') {
+      if (!((r.loginCount || 0) > avgLogin * 1.5 || (r.deviceCount || 0) >= 3)) return false;
+    }
+    // Class filter
+    if (_wlrClassFilter !== 'all') {
+      if (_wlrClassFilter.startsWith('CBSE_')) {
+        const className = _wlrClassFilter.replace('CBSE_', '');
+        if (String(r.studentClass) !== className || String(r.board || '') !== 'CBSE') return false;
+      } else {
+        // Match both "Class 9" and legacy "class-9" format
+        const stored = String(r.studentClass || '').toLowerCase().replace(/\s+/g, '');
+        const target = String(_wlrClassFilter || '').toLowerCase().replace(/\s+/g, '');
+        const targetLegacy = 'class-' + target.replace('class', '').trim();
+        if (stored !== target && stored !== targetLegacy) return false;
+      }
+    }
+    return true;
+  });
+
+  // Sort descending
+  filtered.sort((a, b) => {
+    if (_wlrSort === 'login')    return (b.loginCount  || 0) - (a.loginCount  || 0);
+    if (_wlrSort === 'device')   return (b.deviceCount || 0) - (a.deviceCount || 0);
+    // combined
+    const scoreA = (a.loginCount || 0) + (a.deviceCount || 0) * 2;
+    const scoreB = (b.loginCount || 0) + (b.deviceCount || 0) * 2;
+    return scoreB - scoreA;
+  });
+
+  // Color helpers
+  function loginColor(v) {
+    if (v === 0) return '<span style="color:var(--success);">0 ✅</span>';
+    if (v > avgLogin * 2)   return `<span style="color:var(--danger);">${v} 🔴</span>`;
+    if (v > avgLogin * 1.5) return `<span style="color:#f5a623;">${v} 🟡</span>`;
+    return `<span>${v}</span>`;
+  }
+  function deviceColor(v) {
+    if (v === 0) return '<span style="color:var(--success);">0 ✅</span>';
+    if (v >= 3)  return `<span style="color:var(--danger);">${v} 🔴</span>`;
+    if (v === 2) return `<span style="color:#f5a623;">${v} 🟡</span>`;
+    return `<span style="color:var(--success);">${v} ✅</span>`;
+  }
+
+  if (!filtered.length) {
+    const emptyMsg = _wlrFilter === 'suspicious'
+      ? 'No suspicious activity found this week. ✅'
+      : 'No students found for this filter.';
+    container.innerHTML = `<div style="text-align:center;color:var(--text-dim);padding:40px 0;">${emptyMsg}</div>`;
+    return;
+  }
+
+  container.innerHTML = `
+    <!-- Average bar -->
+    <div style="background:var(--bg-card2);border:1px solid var(--border);border-radius:var(--radius-sm);
+                padding:10px 14px;margin-bottom:14px;
+                display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;text-align:center;">
+      <div>
+        <div style="font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.5px;">Avg Logins</div>
+        <div style="font-size:16px;font-weight:700;color:var(--text-white);">${avgLogin.toFixed(1)}</div>
+      </div>
+      <div>
+        <div style="font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.5px;">Avg Devices</div>
+        <div style="font-size:16px;font-weight:700;color:var(--text-white);">${avgDevice.toFixed(1)}</div>
+      </div>
+      <div>
+        <div style="font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.5px;">Showing</div>
+        <div style="font-size:16px;font-weight:700;color:var(--neon-blue);">${filtered.length}</div>
+      </div>
+    </div>
+
+    <!-- Student cards — mobile friendly -->
+    <div style="display:flex;flex-direction:column;gap:8px;">
+      ${filtered.map((r, i) => `
+        <div style="background:var(--bg-card);border:1px solid var(--border);
+                    border-radius:var(--radius-sm);padding:12px 14px;
+                    display:flex;align-items:center;gap:12px;">
+
+          <!-- Rank number -->
+          <div style="font-size:18px;font-weight:800;color:var(--text-dim);
+                      min-width:28px;text-align:center;flex-shrink:0;">
+            ${i + 1}
+          </div>
+
+          <!-- Student info -->
+          <div style="flex:1;min-width:0;">
+            <div style="font-weight:600;color:var(--text-white);
+                        font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+              ${r.studentName || r.studentId}
+            </div>
+            <div style="font-size:11px;color:var(--text-dim);margin-top:2px;">
+              Class ${r.studentClass || '—'} &nbsp;·&nbsp; Roll ${r.studentRoll || '—'}
+            </div>
+          </div>
+
+          <!-- Login + Device — single pill line -->
+          <div style="display:flex;flex-direction:column;align-items:flex-end;justify-content:center;flex-shrink:0;gap:6px;">
+            <div style="display:flex;align-items:center;gap:6px;
+                        background:var(--bg-card2);border:1px solid var(--border);
+                        border-radius:20px;padding:5px 12px;">
+              <span style="font-size:11px;color:var(--text-dim);">Login</span>
+              <span style="font-size:13px;font-weight:700;">${loginColor(r.loginCount || 0)}</span>
+              <span style="color:var(--border);font-size:13px;">|</span>
+              <span style="font-size:11px;color:var(--text-dim);">Device</span>
+              <span style="font-size:13px;font-weight:700;">${deviceColor(r.deviceCount || 0)}</span>
+            </div>
+          </div>
+
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
 
 // ── Install button click ──────────────────────────────────────
 function pwaInstall() {
