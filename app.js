@@ -2410,7 +2410,7 @@ async function loadHomeNotices() {
       container.innerHTML += `
         <div class="notice-item ${n.importance || 'normal'}">
           <div class="notice-title">${n.title}</div>
-          <div class="notice-body">${_noticeParseMarkdown(n.message || '')}</div>
+          <div class="notice-body" style="white-space:pre-line;">${n.message.replace(/\\n/g, "\n")}</div>
           <div class="notice-footer">
             ${importanceLabel}
             <span class="notice-date">📅 ${formatDate(n.createdAt)}</span>
@@ -3705,226 +3705,6 @@ async function loadStudentNotices() {
 // BUILD NOTICE HTML (reusable)
 // importance: normal | important | urgent
 // =============================================================
-// =============================================================
-// NOTICE MARKDOWN PARSER
-// -------------------------------------------------------------
-// WHY: Plain text notices mein formatting nahi thi — admin ko
-// feature guides, bullet lists, bold headings likhne padte the
-// bina kisi visual structure ke. Students ke liye padhna mushkil.
-//
-// SUPPORTED SYNTAX (mobile pe bhi aasaan type karna):
-//   **text**      → Bold
-//   *text*        → Italic
-//   `text`        → Highlighted (inline code style)
-//   - item        → Bullet point
-//   1. item       → Numbered list
-//   [text](url)   → Clickable link
-//   ---           → Horizontal divider
-//   (blank line)  → Paragraph break
-//
-// PREVIEW MODE (showFull=false):
-//   Markdown tags strip ho jaate hain (plain text preview)
-//   Taaki 2-line clamp sahi kaam kare
-//
-// FULL MODE (showFull=true):
-//   Full HTML rendering with formatting
-// =============================================================
-
-// =============================================================
-// NOTICE TOOLBAR — Button click pe formatting insert karo
-// -------------------------------------------------------------
-// WHY: Manually ** ya * type karna inconvenient tha, especially
-// mobile pe. Yeh function selected text ko wrap karta hai ya
-// cursor pe syntax insert karta hai — MS Word style.
-//
-// textareaId — jis textarea mein insert karna hai
-// action     — 'bold' | 'italic' | 'highlight' | 'bullet' |
-//              'numbered' | 'divider'
-//
-// Selected text ho → wrap karo (bold/italic/highlight)
-// No selection → cursor pe insert karo
-// =============================================================
-// =============================================================
-// NOTICE LIVE PREVIEW
-// -------------------------------------------------------------
-// WHY: Admin ko pata nahi chalta tha ki formatted notice
-// students ko kaisi dikhegi — stars aur symbols hi dikhte the.
-// Ab type karte waqt real-time preview neeche dikhta hai.
-//
-// textareaId  — source textarea
-// previewId   — preview div id
-// wrapId      — wrapper div (hide/show)
-// =============================================================
-function _noticePreview(textareaId, previewId, wrapId) {
-  const ta      = document.getElementById(textareaId);
-  const preview = document.getElementById(previewId);
-  const wrap    = document.getElementById(wrapId);
-  if (!ta || !preview || !wrap) return;
-
-  const text = ta.value.trim();
-  if (!text) {
-    wrap.style.display = 'none';
-    return;
-  }
-  wrap.style.display = 'block';
-  preview.innerHTML  = _noticeParseMarkdown(ta.value);
-}
-
-function _noticeToolbar(textareaId, action) {
-  const ta = document.getElementById(textareaId);
-  if (!ta) return;
-
-  const start = ta.selectionStart;
-  const end   = ta.selectionEnd;
-  const sel   = ta.value.substring(start, end); // selected text (may be empty)
-  const before = ta.value.substring(0, start);
-  const after  = ta.value.substring(end);
-
-  let insert = '';
-  let cursorOffset = 0; // where to put cursor after insert
-
-  if (action === 'bold') {
-    if (sel) {
-      insert = '**' + sel + '**';
-      cursorOffset = insert.length;
-    } else {
-      insert = '****';
-      cursorOffset = 2; // cursor between ** **
-    }
-  } else if (action === 'italic') {
-    if (sel) {
-      insert = '*' + sel + '*';
-      cursorOffset = insert.length;
-    } else {
-      insert = '**';
-      cursorOffset = 1;
-    }
-  } else if (action === 'highlight') {
-    if (sel) {
-      insert = '`' + sel + '`';
-      cursorOffset = insert.length;
-    } else {
-      insert = '``';
-      cursorOffset = 1;
-    }
-  } else if (action === 'bullet') {
-    // Add bullet on new line
-    const needsNewline = before.length > 0 && !before.endsWith('\n');
-    insert = (needsNewline ? '\n' : '') + '- ';
-    cursorOffset = insert.length;
-  } else if (action === 'numbered') {
-    const needsNewline = before.length > 0 && !before.endsWith('\n');
-    insert = (needsNewline ? '\n' : '') + '1. ';
-    cursorOffset = insert.length;
-  } else if (action === 'divider') {
-    const needsNewline = before.length > 0 && !before.endsWith('\n');
-    insert = (needsNewline ? '\n' : '') + '---\n';
-    cursorOffset = insert.length;
-  }
-
-  // Insert text
-  ta.value = before + insert + after;
-
-  // Set cursor position
-  const newPos = start + cursorOffset;
-  ta.setSelectionRange(newPos, newPos);
-  ta.focus();
-}
-
-function _noticeParseMarkdown(text) {
-  // Normalize line endings + unescape stored \n
-  let t = text.replace(/\\n/g, '\n');
-
-  // Split into lines for block-level processing
-  const lines = t.split('\n');
-  let html = '';
-  let i = 0;
-
-  while (i < lines.length) {
-    const line = lines[i];
-
-    // --- Horizontal rule ---
-    if (/^---+$/.test(line.trim())) {
-      html += '<hr style="border:none;border-top:1px solid var(--border);margin:8px 0;">';
-      i++; continue;
-    }
-
-    // --- Bullet list: collect consecutive "- " lines ---
-    if (/^- /.test(line)) {
-      html += '<ul style="margin:4px 0 4px 16px;padding:0;">';
-      while (i < lines.length && /^- /.test(lines[i])) {
-        html += '<li style="margin:2px 0;">' + _noticeInline(lines[i].slice(2)) + '</li>';
-        i++;
-      }
-      html += '</ul>';
-      continue;
-    }
-
-    // --- Numbered list: collect consecutive "N. " lines ---
-    if (/^\d+\. /.test(line)) {
-      html += '<ol style="margin:4px 0 4px 16px;padding:0;">';
-      while (i < lines.length && /^\d+\. /.test(lines[i])) {
-        const content = lines[i].replace(/^\d+\. /, '');
-        html += '<li style="margin:2px 0;">' + _noticeInline(content) + '</li>';
-        i++;
-      }
-      html += '</ol>';
-      continue;
-    }
-
-    // --- Empty line → paragraph break ---
-    if (line.trim() === '') {
-      html += '<br>';
-      i++; continue;
-    }
-
-    // --- Normal line with inline formatting ---
-    html += '<span>' + _noticeInline(line) + '</span><br>';
-    i++;
-  }
-
-  return html;
-}
-
-function _noticeInline(text) {
-  // Security: escape HTML special chars first to prevent XSS
-  // Only then apply our controlled markdown tags
-  let t = text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-
-  // [text](url) → clickable link (opens in new tab)
-  t = t.replace(/\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g,
-    '<a href="$2" target="_blank" rel="noopener" style="color:var(--neon-blue);text-decoration:underline;">$1</a>');
-
-  // **bold**
-  t = t.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-
-  // *italic* (single asterisk, not double)
-  t = t.replace(/\*([^*]+)\*/g, '<em>$1</em>');
-
-  // `inline code` → highlighted
-  t = t.replace(/`([^`]+)`/g,
-    '<span style="background:var(--bg-card2);color:var(--neon-blue);padding:1px 5px;border-radius:3px;font-family:monospace;font-size:0.92em;">$1</span>');
-
-  return t;
-}
-
-function _noticeStripMarkdown(text) {
-  // For preview (2-line clamp) — strip all markdown syntax → plain text
-  return text
-    .replace(/\\n/g, ' ')
-    .replace(/\*\*(.+?)\*\*/g, '$1')
-    .replace(/\*([^*]+)\*/g, '$1')
-    .replace(/`([^`]+)`/g, '$1')
-    .replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1')
-    .replace(/^- /gm, '')
-    .replace(/^\d+\. /gm, '')
-    .replace(/^---+$/gm, '')
-    .replace(/\n/g, ' ');
-}
-
 function buildNoticeHTML(n, showFull = false) {
   const labels = {
     normal:    '<span class="badge badge-blue">📌 Notice</span>',
@@ -3936,12 +3716,6 @@ function buildNoticeHTML(n, showFull = false) {
   // On notices page (showFull=true) → not clickable, shows full text
   const clickable = !showFull;
 
-  // Preview: strip markdown → plain text for 2-line clamp
-  // Full view: render markdown → formatted HTML
-  const bodyContent = showFull
-    ? _noticeParseMarkdown(n.message || '')
-    : _noticeStripMarkdown(n.message || '');
-
   return `
     <div class="notice-item ${n.importance || 'normal'}" style="margin-bottom:12px;
          ${clickable ? 'cursor:pointer; transition:border-color 0.2s, transform 0.15s;' : ''}"
@@ -3949,8 +3723,8 @@ function buildNoticeHTML(n, showFull = false) {
                        onmouseenter="this.style.transform='translateY(-2px)'"
                        onmouseleave="this.style.transform=''"` : ''}>
       <div class="notice-title">${n.title}</div>
-      <div class="notice-body" style="${!showFull ? 'display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;' : ''}">
-        ${bodyContent}
+      <div class="notice-body" style="${!showFull ? 'display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;' : 'white-space:pre-line;'}">
+        ${n.message.replace(/\\n/g, '\n')}
       </div>
       <div class="notice-footer">
         ${labels[n.importance || 'normal']}
@@ -4405,11 +4179,31 @@ function buildFileCardHTML(fileId, file) {
       <div style="margin-bottom:10px;">
         <span class="badge ${typeBadge}">${file.type}</span>
       </div>
-      ${file.description ? `
+      ${file.description ? (() => {
+        const d = file.description;
+        const short = d.length > 80;
+        const preview = short ? d.substring(0,80) + '...' : d;
+        const fileDescId = 'fdesc-' + (file.id || Math.random().toString(36).slice(2));
+        return `
         <div style="font-size:var(--fs-xs); color:var(--text-muted);
                     margin-bottom:12px; line-height:1.5; white-space:pre-line;">
-          ${file.description}
-        </div>` : ''}
+          <span id="${fileDescId}-short">${preview}</span>
+          <span id="${fileDescId}-full" style="display:none;">${d}</span>
+          ${short ? `
+            <span id="${fileDescId}-more"
+              onclick="document.getElementById('${fileDescId}-short').style.display='none';
+                       document.getElementById('${fileDescId}-full').style.display='inline';
+                       document.getElementById('${fileDescId}-more').style.display='none';
+                       document.getElementById('${fileDescId}-less').style.display='inline';"
+              style="color:var(--neon-blue);cursor:pointer;"> more</span>
+            <span id="${fileDescId}-less" style="display:none;"
+              onclick="document.getElementById('${fileDescId}-short').style.display='inline';
+                       document.getElementById('${fileDescId}-full').style.display='none';
+                       document.getElementById('${fileDescId}-more').style.display='inline';
+                       document.getElementById('${fileDescId}-less').style.display='none';"
+              style="color:var(--neon-blue);cursor:pointer;"> less</span>` : ''}
+        </div>`;
+      })() : ''}
       ${file.link ? `
         <button onclick="openMaterial('${file.link.replace(/'/g,"\\'")}','${(file.title||'').replace(/'/g,"\\'")}','${file.type||''}')"
            class="btn btn-primary btn-sm w-full"
@@ -4449,6 +4243,7 @@ function buildFileItemHTML(fileId, file, isAdmin = false) {
   }[file.type] || 'badge-gray';
 
   const safeTitle = file.title.replace(/'/g, "\\'");
+  const safeDesc  = (file.description || '').replace(/'/g, "\\'");
   const menuId    = `f3m-${fileId}`;
 
   // Admin action buttons (desktop)
@@ -4465,7 +4260,7 @@ function buildFileItemHTML(fileId, file, isAdmin = false) {
               onclick="openMoveFileModal('${fileId}', '${safeTitle}')"
               title="Move to another folder">📂</button>
       <button class="btn btn-ghost btn-sm btn-icon"
-              onclick="openRenameFileModal('${fileId}', '${safeTitle}', '${file.type}')"
+              onclick="openRenameFileModal('${fileId}', '${safeTitle}', '${file.type}', '${safeDesc}')"
               title="Edit title / type">✏️</button>
       <button class="btn btn-danger btn-sm btn-icon"
               onclick="confirmDeleteFile('${fileId}', '${safeTitle}')">🗑️</button>
@@ -4490,7 +4285,7 @@ function buildFileItemHTML(fileId, file, isAdmin = false) {
           📂 Move file
         </div>
         <div class="f3m-item"
-             onclick="openRenameFileModal('${fileId}', '${safeTitle}', '${file.type}'); closeFile3dot('${menuId}')">
+             onclick="openRenameFileModal('${fileId}', '${safeTitle}', '${file.type}', '${safeDesc}'); closeFile3dot('${menuId}')">
           ✏️ Edit / Rename
         </div>
         <div class="f3m-divider"></div>
@@ -6637,6 +6432,13 @@ function buildAdminDashboardHTML() {
               <button onclick="aLbChangeMonth(1)"
                 style="width:32px;height:32px;border-radius:50%;background:var(--bg-card2);
                        border:1px solid var(--border);color:var(--text-white);cursor:pointer;font-size:16px;">&#8250;</button>
+              <button id="alb-republish-btn" onclick="aLbRepublish()"
+                style="display:none;padding:6px 12px;border-radius:var(--radius-sm);
+                       background:rgba(255,170,0,0.12);border:1px solid rgba(255,170,0,0.4);
+                       color:#ffaa00;font-size:12px;font-weight:600;cursor:pointer;
+                       font-family:'Rajdhani',sans-serif;">
+                🔄 Republish
+              </button>
             </div>
             <select id="alb-class-filter" onchange="aLbRender()"
               style="background:var(--bg-card2);border:1px solid var(--border);color:var(--text-white);
@@ -6906,50 +6708,7 @@ function buildAdminDashboardHTML() {
         <label>Message <span class="required">*</span></label>
         <textarea class="form-control" id="notice-message"
                   placeholder="Write the full announcement here..."
-                  oninput="_noticePreview('notice-message','notice-preview','notice-preview-wrap')"
                   rows="5"></textarea>
-        <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;margin-bottom:2px;">
-          <button type="button" onclick="_noticeToolbar('notice-message','bold')"
-            style="padding:4px 10px;background:var(--bg-card2);border:1px solid var(--border);
-                   border-radius:4px;color:var(--text-white);font-size:12px;cursor:pointer;font-weight:bold;">
-            B
-          </button>
-          <button type="button" onclick="_noticeToolbar('notice-message','italic')"
-            style="padding:4px 10px;background:var(--bg-card2);border:1px solid var(--border);
-                   border-radius:4px;color:var(--text-white);font-size:12px;cursor:pointer;font-style:italic;">
-            I
-          </button>
-          <button type="button" onclick="_noticeToolbar('notice-message','highlight')"
-            style="padding:4px 10px;background:var(--bg-card2);border:1px solid var(--border);
-                   border-radius:4px;color:var(--neon-blue);font-size:12px;cursor:pointer;font-family:monospace;">
-            H
-          </button>
-          <button type="button" onclick="_noticeToolbar('notice-message','bullet')"
-            style="padding:4px 10px;background:var(--bg-card2);border:1px solid var(--border);
-                   border-radius:4px;color:var(--text-white);font-size:12px;cursor:pointer;">
-            • List
-          </button>
-          <button type="button" onclick="_noticeToolbar('notice-message','numbered')"
-            style="padding:4px 10px;background:var(--bg-card2);border:1px solid var(--border);
-                   border-radius:4px;color:var(--text-white);font-size:12px;cursor:pointer;">
-            1. List
-          </button>
-          <button type="button" onclick="_noticeToolbar('notice-message','divider')"
-            style="padding:4px 10px;background:var(--bg-card2);border:1px solid var(--border);
-                   border-radius:4px;color:var(--text-dim);font-size:12px;cursor:pointer;">
-            ─ Line
-          </button>
-        </div>
-        <!-- Live Preview Panel -->
-        <div id="notice-preview-wrap" style="display:none;margin-top:8px;">
-          <div style="font-size:11px;color:var(--text-dim);margin-bottom:4px;">👁 Preview:</div>
-          <div id="notice-preview"
-               style="background:var(--bg-card2);border:1px solid var(--border);
-                      border-radius:var(--radius-sm);padding:10px 12px;
-                      font-size:13px;line-height:1.7;min-height:40px;
-                      color:var(--text-white);">
-          </div>
-        </div>
       </div>
       <div class="form-group">
         <label>Importance Level</label>
@@ -7039,51 +6798,7 @@ function buildAdminDashboardHTML() {
       </div>
       <div class="form-group">
         <label>Message <span class="required">*</span></label>
-        <textarea class="form-control" id="edit-notice-message"
-                  oninput="_noticePreview('edit-notice-message','edit-notice-preview','edit-notice-preview-wrap')"
-                  rows="5"></textarea>
-        <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;margin-bottom:2px;">
-          <button type="button" onclick="_noticeToolbar('edit-notice-message','bold')"
-            style="padding:4px 10px;background:var(--bg-card2);border:1px solid var(--border);
-                   border-radius:4px;color:var(--text-white);font-size:12px;cursor:pointer;font-weight:bold;">
-            B
-          </button>
-          <button type="button" onclick="_noticeToolbar('edit-notice-message','italic')"
-            style="padding:4px 10px;background:var(--bg-card2);border:1px solid var(--border);
-                   border-radius:4px;color:var(--text-white);font-size:12px;cursor:pointer;font-style:italic;">
-            I
-          </button>
-          <button type="button" onclick="_noticeToolbar('edit-notice-message','highlight')"
-            style="padding:4px 10px;background:var(--bg-card2);border:1px solid var(--border);
-                   border-radius:4px;color:var(--neon-blue);font-size:12px;cursor:pointer;font-family:monospace;">
-            H
-          </button>
-          <button type="button" onclick="_noticeToolbar('edit-notice-message','bullet')"
-            style="padding:4px 10px;background:var(--bg-card2);border:1px solid var(--border);
-                   border-radius:4px;color:var(--text-white);font-size:12px;cursor:pointer;">
-            • List
-          </button>
-          <button type="button" onclick="_noticeToolbar('edit-notice-message','numbered')"
-            style="padding:4px 10px;background:var(--bg-card2);border:1px solid var(--border);
-                   border-radius:4px;color:var(--text-white);font-size:12px;cursor:pointer;">
-            1. List
-          </button>
-          <button type="button" onclick="_noticeToolbar('edit-notice-message','divider')"
-            style="padding:4px 10px;background:var(--bg-card2);border:1px solid var(--border);
-                   border-radius:4px;color:var(--text-dim);font-size:12px;cursor:pointer;">
-            ─ Line
-          </button>
-        </div>
-        <!-- Live Preview Panel -->
-        <div id="edit-notice-preview-wrap" style="display:none;margin-top:8px;">
-          <div style="font-size:11px;color:var(--text-dim);margin-bottom:4px;">👁 Preview:</div>
-          <div id="edit-notice-preview"
-               style="background:var(--bg-card2);border:1px solid var(--border);
-                      border-radius:var(--radius-sm);padding:10px 12px;
-                      font-size:13px;line-height:1.7;min-height:40px;
-                      color:var(--text-white);">
-          </div>
-        </div>
+        <textarea class="form-control" id="edit-notice-message" rows="5"></textarea>
       </div>
       <div class="form-group">
         <label>Importance Level</label>
@@ -9327,7 +9042,7 @@ async function loadAdminNotices() {
               </div>
             </div>
           </div>
-          <div class="notice-body" style="margin-top:8px;">${_noticeParseMarkdown(n.message || '')}</div>
+          <div class="notice-body" style="margin-top:8px;white-space:pre-line;">${n.message}</div>
           <div class="notice-footer" style="margin-top:10px;">
             ${importanceLabel[n.importance || 'normal']}
             <span class="notice-date">📅 ${formatDate(n.createdAt)}</span>
@@ -9570,8 +9285,6 @@ function openEditNoticeModal(id, title, message, importance, showOnHome, showOnD
   document.getElementById('edit-notice-title').value      = title;
   document.getElementById('edit-notice-message').value    = message.replace(/\\n/g, '\n');
   document.getElementById('edit-notice-importance').value = importance;
-  // Auto-show preview with existing content
-  _noticePreview('edit-notice-message', 'edit-notice-preview', 'edit-notice-preview-wrap');
 
   // Pre-fill visibility — default true if field doesn't exist (old notices)
   const home = showOnHome !== false;
@@ -10912,6 +10625,14 @@ function buildAdminMaterialsPage() {
             <option value="Other">📌 Other</option>
           </select>
         </div>
+        <div class="form-group">
+          <label>Description <span style="color:var(--text-dim);font-weight:normal;">(optional)</span></label>
+          <textarea class="form-control" id="rename-file-desc" rows="3"
+                    placeholder="Brief description of this material..."></textarea>
+          <div style="font-size:11px;color:var(--text-dim);margin-top:4px;">
+            Students ko file card mein dikhega — "...more" se full padh sakte hain.
+          </div>
+        </div>
         <div class="modal-footer">
           <button class="btn btn-ghost" onclick="closeModal('modal-rename-file')">Cancel</button>
           <button class="btn btn-primary" onclick="confirmRenameFile()">✏️ Save Changes</button>
@@ -11782,12 +11503,15 @@ async function confirmDeleteFile(fileId, fileName) {
 // RENAME / EDIT FILE — updates title + type in Firestore
 // Cloudinary URL is permanent and unchanged
 // =============================================================
-function openRenameFileModal(fileId, currentTitle, currentType) {
+function openRenameFileModal(fileId, currentTitle, currentType, currentDesc) {
   document.getElementById('rename-file-id').value    = fileId;
   document.getElementById('rename-file-input').value = currentTitle;
-  // Pre-select current type in dropdown
+  // Pre-select current type
   const typeSelect = document.getElementById('rename-file-type');
   if (typeSelect && currentType) typeSelect.value = currentType;
+  // Pre-fill description (if exists)
+  const descEl = document.getElementById('rename-file-desc');
+  if (descEl) descEl.value = currentDesc || '';
   openModal('modal-rename-file');
   setTimeout(() => document.getElementById('rename-file-input').focus(), 200);
 }
@@ -11796,9 +11520,14 @@ async function confirmRenameFile() {
   const fileId   = document.getElementById('rename-file-id').value;
   const newTitle = document.getElementById('rename-file-input').value.trim();
   const newType  = document.getElementById('rename-file-type').value;
+  const newDesc  = (document.getElementById('rename-file-desc')?.value || '').trim();
   if (!newTitle) { showToast('Please enter a title.', 'error'); return; }
   try {
-    await db.collection('materials').doc(fileId).update({ title: newTitle, type: newType });
+    await db.collection('materials').doc(fileId).update({
+      title:       newTitle,
+      type:        newType,
+      description: newDesc,
+    });
     showToast('✅ Material updated successfully!', 'success');
     closeModal('modal-rename-file');
     loadAdminFolderContents(AdminFolderState.currentFolderId);
@@ -12118,7 +11847,7 @@ const Att={board:null,classId:null,className:null,sessionId:null,sessionData:nul
 // ── DAY STATUS (Calendar) ──
 async function attLoadDayStatus(sessionId, classId, y, m, resetCache=true){
   if(resetCache) Att.dayStatusCache={};
-  const safeClassId=(Att.className||classId).toLowerCase().replace(/\s+/g,'-');
+  const safeClassId=classId.toLowerCase().replace(/\s+/g,'-');
   const docId=sessionId+'_'+safeClassId;
   // Load all dates for this month by fetching specific date docs
   const total=attDaysInMonth(y,m);
@@ -12364,6 +12093,11 @@ async function initAdminAttendance(){
 }
 
 function attAdminGoStep(step){
+  // Hide leaderboard notification when navigating away from class view
+  if(step < 3){
+    const notifyEl=document.getElementById('att-lb-notify');
+    if(notifyEl) notifyEl.classList.add('hidden');
+  }
   [1,2,3].forEach(s=>{
     const el=document.getElementById(`att-admin-step-${s}`);if(el)el.classList.toggle('hidden',s!==step);
     const btn=document.getElementById(`att-step-${s}-btn`);
@@ -13478,6 +13212,7 @@ async function lbCheckAndPublish(){
     }
     const nmDays=totalSessionDays-(openDays+holidayDays);
     const mName=prevMonth.toLocaleString('default',{month:'long',year:'numeric'});
+    const classLabel=`${Att.board} ${Att.className}`; // e.g. "BSEB Class 10"
 
     // No session days in this month — outside session range, skip silently
     if(totalSessionDays===0) return;
@@ -13485,12 +13220,12 @@ async function lbCheckAndPublish(){
     // Already published and data is valid — just notify
     const lbSnap=await lbRef.get();
     if(lbSnap.exists&&lbSnap.data().published&&(lbSnap.data().openDays||0)>0){
-      showNotify('success',`${mName} Leaderboard Published!`,`The ${mName} attendance leaderboard is now live for all students.`);
+      showNotify('success',`${mName} Leaderboard Published!`,`${classLabel} — ${mName} attendance leaderboard is now live for all students.`);
       return;
     }
 
     if(nmDays>0){
-      showNotify('warning',`${mName} Leaderboard On Hold`,`Cannot publish — ${nmDays} day${nmDays!==1?'s':''} still marked as ?NM. Resolve all NM days in the Calendar to publish.`);
+      showNotify('warning',`${mName} Leaderboard On Hold`,`${classLabel} — Cannot publish: ${nmDays} day${nmDays!==1?'s':''} still marked as ?NM. Resolve all NM days in the Calendar to publish.`);
       return;
     }
 
@@ -13506,13 +13241,19 @@ async function lbCheckAndPublish(){
       openDays,holidayDays,nmDays:0,
       data:lbData
     });
-    showNotify('success',`${mName} Leaderboard Published!`,`Calculated from ${openDays} open day${openDays!==1?'s':''} — now live for all students.`);
+    showNotify('success',`${mName} Leaderboard Published!`,`${classLabel} — Calculated from ${openDays} open day${openDays!==1?'s':''} — now live for all students.`);
   }catch(e){console.error('lbCheckAndPublish:',e);}
 }
 
 // ── CALCULATE LEADERBOARD FOR A MONTH ──
 async function lbCalculateMonth(y,m,totalOpenDays,sessionSd,sessionEd){
-  const snap=await db.collection('students').where('status','==','approved').get();
+  // Filter by board + class — Att.board and Att.classId are set by admin panel
+  // This prevents cross-class contamination (BSEB class-9 appearing in class-10 leaderboard)
+  const snap=await db.collection('students')
+    .where('status','==','approved')
+    .where('board','==',(Att.board||'BSEB'))
+    .where('class','==',Att.classId)
+    .get();
   const allStudents=[];
   snap.forEach(doc=>allStudents.push({id:doc.id,...doc.data()}));
 
@@ -13653,7 +13394,11 @@ async function sLbLoadMonth(myId,myClass){
     studentsSnap.forEach(doc=>{if(doc.data().class) classesSeen.add(doc.data().class);});
 
     // Load leaderboard doc for each class and merge using board+class combination
-    const boardClassSeen=new Set(allStudents.map(s=>(s.board||'BSEB')+'|'+(s.class||'')).filter(x=>x.split('|')[1]));
+    // WHY: allStudents is not in scope on student side — fetch approved students fresh
+    const allStudentsSnap2 = await db.collection('students').where('status','==','approved').get();
+    const allStudentsList = [];
+    allStudentsSnap2.forEach(doc => allStudentsList.push({id: doc.id, ...doc.data()}));
+    const boardClassSeen=new Set(allStudentsList.map(s=>(s.board||'BSEB')+'|'+(s.class||'')).filter(x=>x.split('|')[1]));
     let allData=[];
     for(const bc of boardClassSeen){
       const [brd,cls]=bc.split('|');
@@ -14343,6 +14088,20 @@ async function aLbLoad(){
   const empty=document.getElementById('alb-empty');
   const emptyMsg=document.getElementById('alb-empty-msg');
 
+  // Disable republish button for current/future month, enable for past months
+  const republishBtn = document.getElementById('alb-republish-btn');
+  const _now = new Date();
+  const _istNow = new Date(_now.getTime() + 5.5*60*60*1000);
+  const isCurrent = ALb.month.getFullYear() > _istNow.getFullYear() ||
+    (ALb.month.getFullYear() === _istNow.getFullYear() && ALb.month.getMonth() >= _istNow.getMonth());
+  if (republishBtn) {
+    republishBtn.style.display = ALb.tab === 'month' ? 'inline-block' : 'none';
+    republishBtn.disabled = isCurrent;
+    republishBtn.style.opacity = isCurrent ? '0.4' : '1';
+    republishBtn.style.cursor = isCurrent ? 'not-allowed' : 'pointer';
+    republishBtn.textContent = '📢 Publish'; // default, updated after data fetch below
+  }
+
   if(!sessionId){
     if(loading) loading.classList.add('hidden');
     if(empty){ empty.classList.remove('hidden'); if(emptyMsg) emptyMsg.textContent='No active session found. Please create a session first.'; }
@@ -14361,15 +14120,28 @@ async function aLbLoad(){
     if(ALb.tab==='month'){
       const y=ALb.month.getFullYear(),m=ALb.month.getMonth();
       const monthStr=`${y}-${String(m+1).padStart(2,'0')}`;
+      let anyPublished = false;
       for(const cls of classes){
         const board=(cls.board||'BSEB').toUpperCase();
         const docId=lbGetDocId(sessionId,board,cls.name,monthStr);
         try{
           const snap=await db.collection('leaderboard').doc(docId).get();
-          if(snap.exists){
+          if(snap.exists && snap.data().published){
+            anyPublished = true;
             (snap.data().data||[]).forEach(e=>ALb.data.push({...e,classDisplay:`${board} ${cls.name}`}));
           }
         }catch{}
+      }
+      // Update button text: Publish (first time) vs Republish (already has data)
+      if(republishBtn){
+        if(isCurrent){
+          // Current/future month — always show "Publish" (disabled)
+          republishBtn.textContent = '📢 Publish';
+          republishBtn.title = 'Cannot publish current or future month — wait until month ends';
+        } else {
+          republishBtn.textContent = anyPublished ? '🔄 Republish' : '📢 Publish';
+          republishBtn.title = anyPublished ? 'Republish this month\'s leaderboard' : 'Publish this month\'s leaderboard for the first time';
+        }
       }
     } else {
       const sessData=ALb.allSessions.find(s=>s.id===sessionId);
@@ -14411,6 +14183,282 @@ async function aLbLoad(){
     console.error('aLbLoad:',e);
     if(loading) loading.classList.add('hidden');
     if(empty){ empty.classList.remove('hidden'); if(emptyMsg) emptyMsg.textContent='Failed to load. Please try again.'; }
+  }
+}
+
+// =============================================================
+// ADMIN LEADERBOARD — REPUBLISH
+// -------------------------------------------------------------
+// WHY: Agar admin ne attendance data publish ke BAAD change kiya
+// (missing days mark kiye, correction ki) toh leaderboard stale
+// ho jaata tha. Republish button se admin selected month ka
+// leaderboard recalculate + overwrite kar sakta hai.
+//
+// Logic:
+// 1. Selected month + session ke sab classes fetch karo
+// 2. lbCalculateMonth() se fresh data nikalo
+// 3. Firestore leaderboard doc overwrite karo (published: true)
+// 4. aLbLoad() se UI refresh karo
+// =============================================================
+// =============================================================
+// BCI CUSTOM CONFIRM DIALOG
+// -------------------------------------------------------------
+// WHY: browser confirm() = ugly, off-brand, blocks UI thread.
+// bciConfirm() = branded modal, Promise-based, non-blocking.
+//
+// Usage:
+//   const ok = await bciConfirm({ title, message, confirmText, type })
+//   type: 'warning' | 'danger' | 'info'
+// =============================================================
+function _bciConfirmInject() {
+  if (document.getElementById('modal-bci-confirm')) return;
+  const div = document.createElement('div');
+  div.innerHTML = `
+    <div class="modal-overlay" id="modal-bci-confirm" style="z-index:9999;">
+      <div class="modal" style="max-width:420px;">
+        <div class="modal-header" style="border-bottom:1px solid var(--border);padding-bottom:12px;">
+          <div class="modal-title" id="bci-confirm-title" style="display:flex;align-items:center;gap:8px;"></div>
+        </div>
+        <div id="bci-confirm-message"
+             style="padding:16px 0;font-size:var(--fs-sm);color:var(--text-muted);line-height:1.6;">
+        </div>
+        <div class="modal-footer" style="gap:8px;">
+          <button class="btn btn-ghost" id="bci-confirm-cancel" style="min-width:80px;">Cancel</button>
+          <button class="btn" id="bci-confirm-ok" style="min-width:100px;"></button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(div.firstElementChild);
+}
+
+function bciConfirm({ title = 'Confirm', message = 'Are you sure?', confirmText = 'OK', type = 'warning' } = {}) {
+  _bciConfirmInject();
+  return new Promise(resolve => {
+    const modal   = document.getElementById('modal-bci-confirm');
+    const titleEl = document.getElementById('bci-confirm-title');
+    const msgEl   = document.getElementById('bci-confirm-message');
+    const okBtn   = document.getElementById('bci-confirm-ok');
+    const cancelBtn = document.getElementById('bci-confirm-cancel');
+
+    const colors = {
+      warning: { icon: '⚠️', color: 'var(--warning, #ffaa00)' },
+      danger:  { icon: '🗑️', color: 'var(--danger, #ff4444)'  },
+      info:    { icon: 'ℹ️', color: 'var(--neon-blue)'         },
+    };
+    const { icon, color } = colors[type] || colors.warning;
+
+    titleEl.innerHTML = `<span style="color:${color};">${icon}</span> <span style="color:var(--text-white);">${title}</span>`;
+    msgEl.innerHTML   = message;
+    okBtn.textContent = confirmText;
+    okBtn.style.background = color;
+    okBtn.style.color      = type === 'warning' ? '#000' : '#fff';
+    okBtn.style.border     = 'none';
+
+    modal.classList.add('open');
+
+    const cleanup = (result) => {
+      modal.classList.remove('open');
+      okBtn.replaceWith(okBtn.cloneNode(true));
+      cancelBtn.replaceWith(cancelBtn.cloneNode(true));
+      resolve(result);
+    };
+
+    document.getElementById('bci-confirm-ok').onclick     = () => cleanup(true);
+    document.getElementById('bci-confirm-cancel').onclick = () => cleanup(false);
+  });
+}
+
+async function aLbRepublish() {
+  if (ALb.tab !== 'month') return;
+
+  const monthLabel = ALb.month.toLocaleString('default', { month: 'long', year: 'numeric' });
+  const isFirstPublish = document.getElementById('alb-republish-btn')?.textContent?.includes('📢');
+
+  const ok = await bciConfirm({
+    title:       isFirstPublish ? `Publish ${monthLabel}` : `Republish ${monthLabel}`,
+    message:     isFirstPublish
+      ? `Current attendance data se <strong>${monthLabel}</strong> leaderboard calculate karke publish kiya jaayega.<br><br>
+         NM days wale students ko fairness formula se calculate kiya jaayega.<br>
+         Best results ke liye pehle sab NM days mark kar lo.`
+      : `Current attendance data se <strong>${monthLabel}</strong> leaderboard recalculate hoga.<br><br>
+         <span style="color:var(--warning);">⚠️ Purana published data overwrite ho jaayega.</span><br><br>
+         NM days wale students ko fairness formula se calculate kiya jaayega.<br>
+         Best results ke liye pehle sab NM days mark kar lo.`,
+    confirmText: isFirstPublish ? '📢 Publish' : '🔄 Republish',
+    type:        'warning',
+  });
+
+  if (!ok) return;
+
+  const btn = document.getElementById('alb-republish-btn');
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Publishing...'; }
+
+  try {
+    const sessionId = ALb.sessionId;
+    if (!sessionId) { showToast('No session selected.', 'error'); return; }
+
+    const y = ALb.month.getFullYear();
+    const m = ALb.month.getMonth();
+    const monthStr = `${y}-${String(m+1).padStart(2,'0')}`;
+
+    // Get session data for start/end dates
+    const sessData = ALb.allSessions.find(s => s.id === sessionId);
+    const sd = sessData?.startDate || null;
+    const ed = sessData?.endDate || null;
+
+    // Get all classes
+    const classSnap = await db.collection('classes').orderBy('order').get();
+    const classes = [];
+    classSnap.forEach(doc => classes.push({ id: doc.id, ...doc.data() }));
+
+    let republishedCount = 0;
+    const skippedClasses = []; // track which classes were skipped and why
+
+    for (const cls of classes) {
+      const board     = (cls.board || 'BSEB').toUpperCase();
+      // classId format for attendance: "class-10" style
+      // Use cls.id directly — it's already in correct format e.g. "class-10"
+      const safeClassId = cls.id;
+      const docId = lbGetDocId(sessionId, board, cls.name, monthStr);
+
+      // CRITICAL: Load day status for THIS specific class fresh
+      // This is what lbCheckAndPublish does — per class cache load
+      await attLoadDayStatus(sessionId, safeClassId, y, m);
+
+      // Count open/holiday/nm days for this class this month
+      let openDays = 0, holidayDays = 0, nmDays = 0;
+      const totalInMonth = attDaysInMonth(y, m);
+      for (let d = 1; d <= totalInMonth; d++) {
+        const dk = attDateKey(y, m, d);
+        if (sd && dk < sd) continue;
+        if (ed && dk > ed) continue;
+        const ds = Att.dayStatusCache[dk] || 'nm';
+        if (ds === 'open') openDays++;
+        else if (ds === 'holiday') holidayDays++;
+        else nmDays++;
+      }
+
+      // Skip if no open days — class has no attendance this month
+      if (openDays === 0) {
+        skippedClasses.push(`${board} ${cls.name} (no open days)`);
+        continue;
+      }
+
+      // NM days check — same guard as lbCheckAndPublish
+      if (nmDays > 0) {
+        skippedClasses.push(`${board} ${cls.name} (${nmDays} NM day${nmDays!==1?'s':''})`);
+        continue;
+      }
+
+      // Get attendance records for this class
+      const attDocId = sessionId + '_' + safeClassId;
+      const classRecords = {};
+      try {
+        const rSnap = await db.collection('attendance').doc(attDocId).collection('records').get();
+        rSnap.forEach(r => { classRecords[r.id] = r.data(); });
+      } catch(e) {}
+
+      // Get students for this specific class + board only
+      // students.class = doc ID format ("class-10"), NOT cls.name ("Class 10")
+      // MUST filter by board too — BSEB class-9 and CBSE class-9 are different!
+      const stuSnap = await db.collection('students')
+        .where('status', '==', 'approved')
+        .where('board', '==', board)
+        .where('class', '==', cls.id)
+        .get();
+
+      const lbData = [];
+      const today = attDateKey(new Date().getFullYear(), new Date().getMonth(), new Date().getDate());
+
+      stuSnap.forEach(doc => {
+        const s = { id: doc.id, ...doc.data() };
+
+        // Student personal start date
+        let sJoinDk = null;
+        if (s.createdAt?.seconds) {
+          const jd = new Date(s.createdAt.seconds * 1000);
+          sJoinDk = attDateKey(jd.getFullYear(), jd.getMonth(), jd.getDate());
+        } else if (s.createdAt && typeof s.createdAt === 'string') {
+          sJoinDk = s.createdAt.substring(0, 10);
+        }
+        const psd = sd && sJoinDk ? (sd >= sJoinDk ? sd : sJoinDk) : sd || sJoinDk || null;
+
+        let studentOpenDays = 0, P = 0, A = 0;
+        for (let d = 1; d <= totalInMonth; d++) {
+          const dk = attDateKey(y, m, d);
+          if (psd && dk < psd) continue;
+          if (dk > today) continue;
+          if (ed && dk > ed) continue;
+          const ds = Att.dayStatusCache[dk] || 'nm';
+          if (ds === 'open') {
+            studentOpenDays++;
+            const st = (classRecords[dk] || {})[s.id] || 'N';
+            if (st === 'P') P++;
+            else if (st === 'A') A++;
+          }
+        }
+
+        if (studentOpenDays === 0) return;
+
+        const missedDays = studentOpenDays - (P + A);
+        let pct;
+        if (missedDays === 0) {
+          pct = Math.round(P / studentOpenDays * 100);
+        } else {
+          pct = Math.round((P * 1 + missedDays * 0.75) / studentOpenDays * 100);
+        }
+
+        const classDisplay = cls.name.replace(/^class-/i, 'Class ').replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+        lbData.push({
+          id: s.id, name: s.name, classId: cls.id, classDisplay,
+          roll: s.roll || s.rollNo || '—', pct, P, A, studentOpenDays, missedDays
+        });
+      });
+
+      if (!lbData.length) continue;
+
+      // Sort + rank
+      lbData.sort((a, b) => b.pct !== a.pct ? b.pct - a.pct : a.name.localeCompare(b.name));
+      let rank = 1;
+      for (let i = 0; i < lbData.length; i++) {
+        lbData[i].rank = i > 0 && lbData[i].pct === lbData[i-1].pct ? lbData[i-1].rank : rank;
+        rank++;
+      }
+
+      // Overwrite Firestore doc
+      await db.collection('leaderboard').doc(docId).set({
+        published:      true,
+        publishedAt:    Date.now(),
+        republishedAt:  Date.now(),
+        month:          monthStr,
+        sessionId:      sessionId,
+        board:          board,
+        className:      cls.name,
+        openDays,
+        holidayDays,
+        nmDays,
+        data:           lbData,
+      });
+      republishedCount++;
+    }
+
+    // Build summary toast
+    if (republishedCount === 0 && skippedClasses.length === 0) {
+      showToast(`⚠️ ${monthLabel}: No classes found.`, 'warning');
+    } else if (republishedCount === 0) {
+      showToast(`⚠️ ${monthLabel}: No class published. ${skippedClasses.length} on hold.`, 'warning');
+    } else if (skippedClasses.length === 0) {
+      showToast(`✅ ${monthLabel}: All ${republishedCount} class${republishedCount !== 1 ? 'es' : ''} published!`, 'success');
+    } else {
+      showToast(`✅ ${monthLabel}: ${republishedCount} published · ${skippedClasses.length} on hold (NM days pending)`, 'warning');
+    }
+    aLbLoad(); // Refresh UI
+
+  } catch(e) {
+    console.error('aLbRepublish:', e);
+    showToast('❌ Republish failed. Try again.', 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '🔄 Republish'; }
   }
 }
 
