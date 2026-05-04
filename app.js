@@ -3583,6 +3583,13 @@ async function initStudentDashboard() {
 // =============================================================
 // BIRTHDAY FEATURE
 // =============================================================
+function truncateAtWord(str, limit) {
+  if (str.length <= limit) return str;
+  const cut = str.substring(0, limit);
+  const lastSpace = cut.lastIndexOf(' ');
+  return lastSpace > 0 ? cut.substring(0, lastSpace) : cut;
+}
+
 function checkStudentBirthday() {
   const student = AppState.currentUser;
   if (!student || !student.dob) return;
@@ -4422,7 +4429,7 @@ function buildFileCardHTML(fileId, file) {
       ${file.description ? (() => {
         const d = file.description;
         const short = d.length > 80;
-        const preview = short ? d.substring(0,80) + '...' : d;
+        const preview = short ? truncateAtWord(d, 80) : d;
         const fileDescId = 'fdesc-' + (file.id || Math.random().toString(36).slice(2));
         return `
         <div style="font-size:var(--fs-xs); color:var(--text-muted);
@@ -4435,13 +4442,12 @@ function buildFileCardHTML(fileId, file) {
                        document.getElementById('${fileDescId}-full').style.display='inline';
                        document.getElementById('${fileDescId}-more').style.display='none';
                        document.getElementById('${fileDescId}-less').style.display='inline';"
-              style="color:var(--neon-blue);cursor:pointer;"> more</span>
-            <span id="${fileDescId}-less" style="display:none;"
+              style="color:var(--neon-blue);cursor:pointer;font-weight:700;text-decoration:underline;"> ...more</span>
+            <span id="${fileDescId}-less" style="display:none;color:var(--neon-blue);cursor:pointer;font-weight:700;text-decoration:underline;"
               onclick="document.getElementById('${fileDescId}-short').style.display='inline';
                        document.getElementById('${fileDescId}-full').style.display='none';
                        document.getElementById('${fileDescId}-more').style.display='inline';
-                       document.getElementById('${fileDescId}-less').style.display='none';"
-              style="color:var(--neon-blue);cursor:pointer;"> less</span>` : ''}
+                       document.getElementById('${fileDescId}-less').style.display='none';"> ...less</span>` : ''}
         </div>`;
       })() : ''}
       ${file.link ? `
@@ -4557,10 +4563,23 @@ function buildFileItemHTML(fileId, file, isAdmin = false) {
         <div class="file-meta">
           <span class="badge ${typeBadge}" style="font-size:10px;">${file.type}</span>
           <span>📅 ${formatDate(file.createdAt)}</span>
-          ${file.description ? `<span title="${file.description}">📝 ${file.description.substring(0,50)}${file.description.length>50?'...':''}</span>` : ''}
           ${isAdmin && file.unlockTimer ?
             `<span class="timer-badge">⏰ ${getCountdown(file.unlockTimer)}</span>` : ''}
         </div>
+        ${file.description ? (() => {
+          const d = file.description;
+          const short = d.length > 80;
+          const preview = short ? truncateAtWord(d, 80) : d;
+          const fid = 'fld-' + (file.id || Math.random().toString(36).slice(2));
+          return `<div style="font-size:var(--fs-xs);color:var(--text-muted);margin-top:4px;line-height:1.5;">
+            <span id="${fid}-short">📝 ${preview}</span>
+            <span id="${fid}-full" style="display:none;">📝 ${d}</span>
+            ${short ? `
+              <span id="${fid}-more" onclick="document.getElementById('${fid}-short').style.display='none';document.getElementById('${fid}-full').style.display='inline';document.getElementById('${fid}-more').style.display='none';document.getElementById('${fid}-less').style.display='inline';"
+                style="color:var(--neon-blue);cursor:pointer;font-weight:700;text-decoration:underline;"> ...more</span>
+              <span id="${fid}-less" style="display:none;color:var(--neon-blue);cursor:pointer;font-weight:700;text-decoration:underline;" onclick="document.getElementById('${fid}-short').style.display='inline';document.getElementById('${fid}-full').style.display='none';document.getElementById('${fid}-more').style.display='inline';document.getElementById('${fid}-less').style.display='none';"> ...less</span>` : ''}
+          </div>`;
+        })() : ''}
       </div>
       <div class="file-actions">
         ${adminDesktopBtns}
